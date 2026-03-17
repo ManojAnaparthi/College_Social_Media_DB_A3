@@ -12,7 +12,7 @@ from .bruteforce import BruteForceDB
 
 @dataclass
 class BenchmarkConfig:
-    sizes: Tuple[int, ...] = (100, 500, 1000, 5000)
+    sizes: Tuple[int, ...] = tuple(range(100, 10001, 1000))  # 100, 1100, 2100, ..., 10000
     seed: int = 42
     bplustree_order: int = 4
 

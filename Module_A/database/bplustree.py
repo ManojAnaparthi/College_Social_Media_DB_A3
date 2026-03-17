@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import importlib
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass, field
 from math import ceil
+from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 
@@ -292,16 +294,51 @@ class BPlusTree:
         return result
 
     def visualize_tree(self):
-        # Visualization is intentionally out of scope for this stage.
-        raise NotImplementedError("Visualization is excluded for now.")
+        # Build and return a Graphviz Digraph for the current B+ tree state.
+        graphviz_module = importlib.import_module("graphviz")
+        Digraph = graphviz_module.Digraph
+
+        dot = Digraph(comment="B+ Tree")
+        dot.attr("graph", rankdir="TB", splines="polyline")
+        dot.attr("node", shape="box", style="rounded", fontname="Helvetica")
+        dot.attr("edge", fontname="Helvetica")
+
+        self._add_nodes(dot, self.root)
+        self._add_edges(dot, self.root)
+        return dot
 
     def _add_nodes(self, dot, node):
-        # Visualization helper intentionally out of scope for this stage.
-        raise NotImplementedError("Visualization is excluded for now.")
+        node_id = f"n{id(node)}"
+
+        if node.is_leaf:
+            if node.keys:
+                pairs = [f"{k}:{node.values[i]}" for i, k in enumerate(node.keys)]
+                label = "Leaf\\n" + " | ".join(pairs)
+            else:
+                label = "Leaf\\nempty"
+            dot.node(node_id, label=label)
+        else:
+            keys_label = " | ".join(str(key) for key in node.keys) if node.keys else "empty"
+            label = "Internal\\n" + keys_label
+            dot.node(node_id, label=label)
+
+        if not node.is_leaf:
+            for child in node.children:
+                self._add_nodes(dot, child)
 
     def _add_edges(self, dot, node):
-        # Visualization helper intentionally out of scope for this stage.
-        raise NotImplementedError("Visualization is excluded for now.")
+        node_id = f"n{id(node)}"
+
+        if node.is_leaf:
+            if node.next is not None:
+                next_id = f"n{id(node.next)}"
+                dot.edge(node_id, next_id, style="dashed", color="blue", label="next", constraint="false")
+            return
+
+        for child in node.children:
+            child_id = f"n{id(child)}"
+            dot.edge(node_id, child_id)
+            self._add_edges(dot, child)
 
     def _find_leaf(self, key: int) -> BPlusTreeNode:
         node = self.root
@@ -343,3 +380,28 @@ class BPlusTree:
         while not current.is_leaf:
             current = current.children[0]
         return current.keys[0] if current.keys else None
+
+
+def main() -> None:
+    tree = BPlusTree(order=4)
+    for key in [15, 3, 8, 22, 7, 30, 1, 12, 18, 25, 5, 10]:
+        tree.insert(key, f"user_{key}")
+
+    dot = tree.visualize_tree()
+
+    output_dir = Path(__file__).resolve().parent / "visualizations"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_base = output_dir / "bplustree_demo"
+
+    try:
+        rendered_path = dot.render(filename=str(output_base), format="png", cleanup=True)
+        print(f"B+ tree visualization generated: {rendered_path}")
+    except Exception as exc:
+        dot_path = output_base.with_suffix(".dot")
+        dot.save(filename=str(dot_path))
+        print(f"Could not render PNG automatically: {exc}")
+        print(f"DOT source saved at: {dot_path}")
+
+
+if __name__ == "__main__":
+    main()
