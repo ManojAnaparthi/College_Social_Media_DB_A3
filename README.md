@@ -74,7 +74,7 @@ This runs performance testing for different random key set sizes and generates:
 
 - Implemented in: Module_A/database/bplustree.py
 - Main method: BPlusTree.visualize_tree()
-- Helper methods: _add_nodes() and _add_edges()
+- Helper methods: \_add_nodes() and \_add_edges()
 - Current output folder for visualization files: Module_A/database/visualizations/
 - Existing generated files: Module_A/database/visualizations/bplustree_demo.png, Module_A/database/visualizations/bplustree_demo_large.png
 
@@ -85,29 +85,29 @@ This runs performance testing for different random key set sizes and generates:
 - Benchmarks used from: Module_A/database/performance.py (PerformanceAnalyzer)
 - Run file: Module_A/database/run_performance_tests.py
 - Output folders for generated artifacts:
-	- Module_A/database/performance_results_jpgs/
-	- Module_A/database/visualizations/
+  - Module_A/database/performance_results_jpgs/
+  - Module_A/database/visualizations/
 - Generated files include:
-	- JPG charts: performance_insert.jpg, performance_search.jpg, performance_delete.jpg, performance_range_query.jpg, performance_random_workload.jpg, performance_memory_usage.jpg, performance_combined_comparison.jpg, performance_speedup_ratio.jpg
-	- Benchmark data: benchmark_results.json
+  - JPG charts: performance_insert.jpg, performance_search.jpg, performance_delete.jpg, performance_range_query.jpg, performance_random_workload.jpg, performance_memory_usage.jpg, performance_combined_comparison.jpg, performance_speedup_ratio.jpg
+  - Benchmark data: benchmark_results.json
 
 ## Table and DB Manager Layer (Additional)
 
 - Implemented in:
-	- Module_A/database/table.py
-	- Module_A/database/db_manager.py
+  - Module_A/database/table.py
+  - Module_A/database/db_manager.py
 - Purpose:
-	- Provide a simple DBMS-style API over the B+ Tree index.
-	- Manage multiple in-memory tables cleanly.
+  - Provide a simple DBMS-style API over the B+ Tree index.
+  - Manage multiple in-memory tables cleanly.
 
 ### Features
 
 - Table API:
-	- insert(row), upsert(row), get(key), update(key, updates), delete(key)
-	- range_query(start_key, end_key), all_rows(), count(), truncate()
+  - insert(row), upsert(row), get(key), update(key, updates), delete(key)
+  - range_query(start_key, end_key), all_rows(), count(), truncate()
 - DBManager API:
-	- create_table(name, ...), get_table(name), drop_table(name)
-	- list_tables(), has_table(name)
+  - create_table(name, ...), get_table(name), drop_table(name)
+  - list_tables(), has_table(name)
 
 ### Quick Usage
 
