@@ -8,8 +8,8 @@
     "iterations": 40,
     "warmup": 5,
     "limit": 20,
-    "offset": 1511,
-    "comment_post_id": 3022
+    "offset": 1510,
+    "comment_post_id": 3021
   },
   "stages": [
     {
@@ -17,30 +17,30 @@
       "indexes_enabled": false,
       "sql_ms": {
         "list_posts": {
-          "avg_ms": 3.149,
-          "p95_ms": 4.05,
-          "min_ms": 2.391,
-          "max_ms": 4.103
+          "avg_ms": 5.601,
+          "p95_ms": 10.357,
+          "min_ms": 2.633,
+          "max_ms": 10.858
         },
         "list_comments": {
-          "avg_ms": 23.912,
-          "p95_ms": 25.701,
-          "min_ms": 20.792,
-          "max_ms": 26.317
+          "avg_ms": 24.173,
+          "p95_ms": 26.773,
+          "min_ms": 21.234,
+          "max_ms": 43.512
         }
       },
       "api_ms": {
         "list_posts": {
-          "avg_ms": 11.311,
-          "p95_ms": 12.289,
-          "min_ms": 7.411,
-          "max_ms": 12.905
+          "avg_ms": 33.422,
+          "p95_ms": 49.053,
+          "min_ms": 12.754,
+          "max_ms": 52.9
         },
         "list_comments": {
-          "avg_ms": 55.379,
-          "p95_ms": 56.614,
-          "min_ms": 50.912,
-          "max_ms": 57.285
+          "avg_ms": 96.232,
+          "p95_ms": 104.787,
+          "min_ms": 76.599,
+          "max_ms": 118.241
         }
       },
       "explain": {
@@ -83,30 +83,30 @@
       "indexes_enabled": true,
       "sql_ms": {
         "list_posts": {
-          "avg_ms": 3.164,
-          "p95_ms": 4.086,
-          "min_ms": 2.397,
-          "max_ms": 4.09
+          "avg_ms": 4.877,
+          "p95_ms": 8.737,
+          "min_ms": 3.014,
+          "max_ms": 9.669
         },
         "list_comments": {
-          "avg_ms": 15.372,
-          "p95_ms": 15.725,
-          "min_ms": 14.921,
-          "max_ms": 15.956
+          "avg_ms": 19.638,
+          "p95_ms": 21.635,
+          "min_ms": 18.137,
+          "max_ms": 21.977
         }
       },
       "api_ms": {
         "list_posts": {
-          "avg_ms": 11.339,
-          "p95_ms": 12.385,
-          "min_ms": 7.984,
-          "max_ms": 13.077
+          "avg_ms": 37.511,
+          "p95_ms": 52.891,
+          "min_ms": 18.805,
+          "max_ms": 61.497
         },
         "list_comments": {
-          "avg_ms": 47.613,
-          "p95_ms": 48.674,
-          "min_ms": 44.563,
-          "max_ms": 49.414
+          "avg_ms": 97.535,
+          "p95_ms": 127.301,
+          "min_ms": 75.531,
+          "max_ms": 138.314
         }
       },
       "explain": {
@@ -146,9 +146,9 @@
     }
   ],
   "speedup": {
-    "posts_sql_speedup": 0.995,
-    "comments_sql_speedup": 1.556,
-    "posts_api_speedup": 0.998,
-    "comments_api_speedup": 1.163
+    "posts_sql_speedup": 1.148,
+    "comments_sql_speedup": 1.231,
+    "posts_api_speedup": 0.891,
+    "comments_api_speedup": 0.987
   }
 }
