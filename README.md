@@ -233,6 +233,54 @@ setx DB_PASSWORD "<your-mysql-password>"
 ```
 **DON'T TRY TO SET THE PASSWORD IN database.py**
 
+## Module B SubTask 4 and 5 (Indexing + Benchmarking)
+
+### What was corrected
+
+- Benchmarking now uses a strict two-stage method in `Module_B/app/run_index_benchmark.py`:
+  - `before_indexes`: drops optimization indexes that help tested endpoints.
+  - `after_indexes`: creates only targeted optimization indexes.
+- FK-support baseline indexes are kept in both stages so schema integrity is preserved.
+
+### Targeted indexes and API mapping
+
+1. `idx_post_active_postdate ON Post(IsActive, PostDate DESC)`
+   - API query pattern: post feed listing
+   - Clauses targeted: `WHERE p.IsActive = TRUE`, `ORDER BY p.PostDate DESC`
+
+2. `idx_comment_post_active_date ON Comment(PostID, IsActive, CommentDate ASC)`
+   - API query pattern: comments under a post
+   - Clauses targeted: `WHERE c.PostID = ? AND c.IsActive = TRUE`, `ORDER BY c.CommentDate ASC`
+
+Schema location: `Module_B/sql/schema.sql`
+
+### Evidence artifacts
+
+- Benchmark output JSON (same params for both stages, API + SQL timings, EXPLAIN):
+  - `Module_B/performance/index_benchmark_results.json`
+- Benchmark runner:
+  - `Module_B/app/run_index_benchmark.py`
+
+### Latest measured impact
+
+- SQL speedup:
+  - posts: `0.995x`
+  - comments: `1.556x`
+- API speedup:
+  - posts: `0.998x`
+  - comments: `1.163x`
+
+### EXPLAIN plan change proof (comments endpoint)
+
+- Before:
+  - key: `idx_comment_post`
+  - extra: `Using where; Using filesort`
+- After:
+  - key: `idx_comment_post_active_date`
+  - extra: `Using index condition`
+
+This demonstrates a direct plan change for the comments hotspot after applying the composite index.
+
 4. Open UI:
 
 - http://127.0.0.1:8001/

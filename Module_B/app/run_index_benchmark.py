@@ -54,7 +54,28 @@ LIST_COMMENTS_SQL = """
     ORDER BY c.CommentDate ASC
 """
 
-INDEX_DEFS = [
+BASELINE_INDEX_DEFS = [
+    # Baseline FK-support indexes (kept in both before/after stages).
+    ("Post", "idx_post_member", "CREATE INDEX idx_post_member ON Post(MemberID)"),
+    ("Comment", "idx_comment_post", "CREATE INDEX idx_comment_post ON Comment(PostID)"),
+    ("Comment", "idx_comment_member", "CREATE INDEX idx_comment_member ON Comment(MemberID)"),
+]
+
+BEFORE_STAGE_DROP_INDEXES = [
+    # Drop query-speed indexes for strict pre-optimization baseline.
+    ("Post", "idx_post_date"),
+    ("Post", "idx_post_active_postdate"),
+    ("Post", "idx_post_active_date_member"),
+    ("Post", "idx_post_date_active"),
+    ("Comment", "idx_comment_post_active_date"),
+]
+
+AFTER_STAGE_INDEX_DEFS = [
+    (
+        "Post",
+        "idx_post_active_postdate",
+        "CREATE INDEX idx_post_active_postdate ON Post(IsActive, PostDate DESC)",
+    ),
     (
         "Comment",
         "idx_comment_post_active_date",
@@ -62,17 +83,33 @@ INDEX_DEFS = [
     ),
 ]
 
-LEGACY_EXPERIMENT_INDEXES = [
-    ("Post", "idx_post_active_date_member"),
-    ("Post", "idx_post_date_active"),
-]
-
 
 def safe_drop_index(cursor, table_name, index_name):
-    try:
-        cursor.execute(f"DROP INDEX {index_name} ON {table_name}")
-    except pymysql.MySQLError:
-        pass
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s
+        """,
+        (table_name, index_name),
+    )
+    exists = cursor.fetchone()["c"] > 0
+    if exists:
+        cursor.execute(f"ALTER TABLE `{table_name}` DROP INDEX `{index_name}`")
+
+
+def safe_create_index(cursor, table_name, index_name, ddl):
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS c
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE() AND table_name = %s AND index_name = %s
+        """,
+        (table_name, index_name),
+    )
+    exists = cursor.fetchone()["c"] > 0
+    if not exists:
+        cursor.execute(ddl)
 
 
 def ensure_benchmark_data():
@@ -310,13 +347,13 @@ def set_indexes(enabled):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
-            for table_name, index_name in LEGACY_EXPERIMENT_INDEXES:
-                safe_drop_index(cursor, table_name, index_name)
-            for table_name, index_name, ddl in INDEX_DEFS:
+            for table_name, index_name, ddl in BASELINE_INDEX_DEFS:
+                safe_create_index(cursor, table_name, index_name, ddl)
+            for table_name, index_name in BEFORE_STAGE_DROP_INDEXES:
                 safe_drop_index(cursor, table_name, index_name)
             if enabled:
-                for _, _, ddl in INDEX_DEFS:
-                    cursor.execute(ddl)
+                for table_name, index_name, ddl in AFTER_STAGE_INDEX_DEFS:
+                    safe_create_index(cursor, table_name, index_name, ddl)
     finally:
         conn.close()
 

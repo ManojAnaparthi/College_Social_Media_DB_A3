@@ -261,22 +261,16 @@ CREATE TABLE ApiWriteLog (
 -- ============================================================================
 -- Indexes for Performance Optimization
 -- ============================================================================
-CREATE INDEX idx_member_role ON Member(Role);
+-- Baseline FK-support indexes.
 CREATE INDEX idx_post_member ON Post(MemberID);
-CREATE INDEX idx_post_date ON Post(PostDate DESC);
 CREATE INDEX idx_comment_post ON Comment(PostID);
 CREATE INDEX idx_comment_member ON Comment(MemberID);
+
+-- Targeted SubTask 4 indexes, aligned with API query WHERE/ORDER BY patterns.
+-- 1) Post feed query: WHERE IsActive = TRUE ORDER BY PostDate DESC
+CREATE INDEX idx_post_active_postdate ON Post(IsActive, PostDate DESC);
+-- 2) Comment listing query: WHERE PostID = ? AND IsActive = TRUE ORDER BY CommentDate ASC
 CREATE INDEX idx_comment_post_active_date ON Comment(PostID, IsActive, CommentDate ASC);
-CREATE INDEX idx_like_target ON `Like`(TargetType, TargetID);
-CREATE INDEX idx_follow_follower ON Follow(FollowerID);
-CREATE INDEX idx_follow_following ON Follow(FollowingID);
-CREATE INDEX idx_report_status ON Report(Status);
-CREATE INDEX idx_message_receiver ON Message(ReceiverID);
-CREATE INDEX idx_notification_member ON Notification(MemberID);
-CREATE INDEX idx_activitylog_member ON ActivityLog(MemberID);
-CREATE INDEX idx_activitylog_timestamp ON ActivityLog(`Timestamp` DESC);
-CREATE INDEX idx_apiwritelog_time ON ApiWriteLog(ChangeTime DESC);
-CREATE INDEX idx_apiwritelog_auth ON ApiWriteLog(IsAuthorized, SourceType);
 
 -- ============================================================================
 -- TRIGGERS for Business Rule Enforcement
