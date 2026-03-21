@@ -235,6 +235,27 @@ cd Module_B/app
 uvicorn main:app --reload --port 8001
 ```
 
+JWT secret setup (Windows PowerShell):
+
+1. Generate a strong random JWT secret for the current shell:
+
+```powershell
+$jwt = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
+$env:JWT_SECRET_KEY = $jwt
+```
+
+2. Set it permanently for new PowerShell sessions:
+
+```powershell
+setx JWT_SECRET_KEY "$jwt"
+```
+
+3. Quick verification before starting API:
+
+```powershell
+if ([string]::IsNullOrWhiteSpace($env:JWT_SECRET_KEY)) { "JWT_SECRET_KEY is missing" } else { "JWT_SECRET_KEY is set" }
+```
+
 Optional (persist across new PowerShell sessions):
 
 ```powershell
@@ -247,11 +268,12 @@ setx JWT_SECRET_KEY "<your-random-secret>"
 
 ### What was corrected
 
-- Benchmarking now uses a strict two-stage method in `Module_B/app/run_index_benchmark.py`:
+- Benchmarking now runs interactively inside `Module_B/report.ipynb` with a strict two-stage method:
   - `before_indexes`: drops optimization indexes that help tested endpoints.
   - `after_indexes`: creates only targeted optimization indexes.
+- Slow benchmark targets are identified automatically from pre-index SQL timing in the notebook flow.
 - FK-support baseline indexes are kept in both stages so schema integrity is preserved.
-- To reduce run-to-run noise, the benchmark executes multiple rounds and reports median speedups.
+- Before/after comparison includes SQL timings, API timings, and EXPLAIN plan snapshots.
 
 ### Targeted indexes and API mapping
 
@@ -269,17 +291,17 @@ Schema location: `Module_B/sql/schema.sql`
 
 - Benchmark output JSON (same params for both stages, API + SQL timings, EXPLAIN):
   - `Module_B/performance/index_benchmark_results.json`
-- Benchmark runner:
-  - `Module_B/app/run_index_benchmark.py`
+- Interactive benchmark/report notebook:
+  - `Module_B/report.ipynb`
 
 ### Latest measured impact
 
 - SQL speedup:
-  - posts: `1.19x`
-  - comments: `1.165x`
+  - posts: `1.013x`
+  - comments: `1.134x`
 - API speedup:
-  - posts: `0.949x`
-  - comments: `1.069x`
+  - posts: `1.052x`
+  - comments: `1.040x`
 
 
 4. Open UI:

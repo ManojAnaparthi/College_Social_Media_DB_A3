@@ -14,8 +14,10 @@ from database import DatabaseQueryError, execute_query
 
 app = FastAPI()
 
-# Read JWT secret from environment so it is not hardcoded in source.
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev_only_change_me")
+# Require JWT secret from environment; fail fast if missing.
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("JWT_SECRET_KEY is required. Set it in your environment before starting the API.")
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
