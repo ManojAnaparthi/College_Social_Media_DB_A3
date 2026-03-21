@@ -647,6 +647,150 @@ BEGIN
 END//
 DELIMITER ;
 
+-- Trigger 19: Track Follow INSERT source (API vs direct DB)
+DELIMITER //
+CREATE TRIGGER trg_apiwritelog_follow_insert
+AFTER INSERT ON Follow
+FOR EACH ROW
+BEGIN
+    INSERT INTO ApiWriteLog
+        (TableName, OperationType, RecordID, ActorMemberID, SourceType, IsAuthorized, ActionName, Endpoint, HttpMethod, Details)
+    VALUES
+        (
+            'Follow',
+            'INSERT',
+            CAST(NEW.FollowID AS CHAR),
+            COALESCE(@api_actor_id, NEW.FollowerID),
+            IF(@api_authorized = 1, 'API', 'DIRECT_DB'),
+            IF(@api_authorized = 1, TRUE, FALSE),
+            @api_action,
+            @api_endpoint,
+            @api_method,
+            CONCAT('Follow insert: follower=', NEW.FollowerID, ', following=', NEW.FollowingID)
+        );
+END//
+DELIMITER ;
+
+-- Trigger 20: Track Follow UPDATE source (API vs direct DB)
+DELIMITER //
+CREATE TRIGGER trg_apiwritelog_follow_update
+AFTER UPDATE ON Follow
+FOR EACH ROW
+BEGIN
+    INSERT INTO ApiWriteLog
+        (TableName, OperationType, RecordID, ActorMemberID, SourceType, IsAuthorized, ActionName, Endpoint, HttpMethod, Details)
+    VALUES
+        (
+            'Follow',
+            'UPDATE',
+            CAST(NEW.FollowID AS CHAR),
+            COALESCE(@api_actor_id, NEW.FollowerID),
+            IF(@api_authorized = 1, 'API', 'DIRECT_DB'),
+            IF(@api_authorized = 1, TRUE, FALSE),
+            @api_action,
+            @api_endpoint,
+            @api_method,
+            CONCAT('Follow update: follower=', NEW.FollowerID, ', following=', NEW.FollowingID)
+        );
+END//
+DELIMITER ;
+
+-- Trigger 21: Track Follow DELETE source (API vs direct DB)
+DELIMITER //
+CREATE TRIGGER trg_apiwritelog_follow_delete
+AFTER DELETE ON Follow
+FOR EACH ROW
+BEGIN
+    INSERT INTO ApiWriteLog
+        (TableName, OperationType, RecordID, ActorMemberID, SourceType, IsAuthorized, ActionName, Endpoint, HttpMethod, Details)
+    VALUES
+        (
+            'Follow',
+            'DELETE',
+            CAST(OLD.FollowID AS CHAR),
+            COALESCE(@api_actor_id, OLD.FollowerID),
+            IF(@api_authorized = 1, 'API', 'DIRECT_DB'),
+            IF(@api_authorized = 1, TRUE, FALSE),
+            @api_action,
+            @api_endpoint,
+            @api_method,
+            CONCAT('Follow delete: follower=', OLD.FollowerID, ', following=', OLD.FollowingID)
+        );
+END//
+DELIMITER ;
+
+-- Trigger 22: Track Like INSERT source (API vs direct DB)
+DELIMITER //
+CREATE TRIGGER trg_apiwritelog_like_insert
+AFTER INSERT ON `Like`
+FOR EACH ROW
+BEGIN
+    INSERT INTO ApiWriteLog
+        (TableName, OperationType, RecordID, ActorMemberID, SourceType, IsAuthorized, ActionName, Endpoint, HttpMethod, Details)
+    VALUES
+        (
+            'Like',
+            'INSERT',
+            CAST(NEW.LikeID AS CHAR),
+            COALESCE(@api_actor_id, NEW.MemberID),
+            IF(@api_authorized = 1, 'API', 'DIRECT_DB'),
+            IF(@api_authorized = 1, TRUE, FALSE),
+            @api_action,
+            @api_endpoint,
+            @api_method,
+            CONCAT('Like insert: member=', NEW.MemberID, ', target=', NEW.TargetType, ':', NEW.TargetID)
+        );
+END//
+DELIMITER ;
+
+-- Trigger 23: Track Like UPDATE source (API vs direct DB)
+DELIMITER //
+CREATE TRIGGER trg_apiwritelog_like_update
+AFTER UPDATE ON `Like`
+FOR EACH ROW
+BEGIN
+    INSERT INTO ApiWriteLog
+        (TableName, OperationType, RecordID, ActorMemberID, SourceType, IsAuthorized, ActionName, Endpoint, HttpMethod, Details)
+    VALUES
+        (
+            'Like',
+            'UPDATE',
+            CAST(NEW.LikeID AS CHAR),
+            COALESCE(@api_actor_id, NEW.MemberID),
+            IF(@api_authorized = 1, 'API', 'DIRECT_DB'),
+            IF(@api_authorized = 1, TRUE, FALSE),
+            @api_action,
+            @api_endpoint,
+            @api_method,
+            CONCAT('Like update: member=', NEW.MemberID, ', target=', NEW.TargetType, ':', NEW.TargetID)
+        );
+END//
+DELIMITER ;
+
+-- Trigger 24: Track Like DELETE source (API vs direct DB)
+DELIMITER //
+CREATE TRIGGER trg_apiwritelog_like_delete
+AFTER DELETE ON `Like`
+FOR EACH ROW
+BEGIN
+    INSERT INTO ApiWriteLog
+        (TableName, OperationType, RecordID, ActorMemberID, SourceType, IsAuthorized, ActionName, Endpoint, HttpMethod, Details)
+    VALUES
+        (
+            'Like',
+            'DELETE',
+            CAST(OLD.LikeID AS CHAR),
+            COALESCE(@api_actor_id, OLD.MemberID),
+            IF(@api_authorized = 1, 'API', 'DIRECT_DB'),
+            IF(@api_authorized = 1, TRUE, FALSE),
+            @api_action,
+            @api_endpoint,
+            @api_method,
+            CONCAT('Like delete: member=', OLD.MemberID, ', target=', OLD.TargetType, ':', OLD.TargetID)
+        );
+END//
+DELIMITER ;
+
 -- ============================================================================
 -- End of Schema
 -- ============================================================================

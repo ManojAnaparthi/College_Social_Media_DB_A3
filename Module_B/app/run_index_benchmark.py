@@ -15,6 +15,7 @@ COMMENTS_PER_BENCH_POST = 3
 TARGET_HOT_POST_COMMENTS = 2500
 ITERATIONS = 40
 WARMUP = 5
+BENCH_ROUNDS = 3
 API_BASE = "http://127.0.0.1:8001"
 
 LIST_POSTS_SQL = """
@@ -396,19 +397,74 @@ def speedup(before_ms, after_ms):
     return round(before_ms / after_ms, 3)
 
 
+def aggregate_metric_summaries(metric_summaries):
+    return {
+        "avg_ms": round(statistics.median([m["avg_ms"] for m in metric_summaries]), 3),
+        "median_ms": round(statistics.median([m["median_ms"] for m in metric_summaries]), 3),
+        "p95_ms": round(statistics.median([m["p95_ms"] for m in metric_summaries]), 3),
+        "min_ms": round(min(m["min_ms"] for m in metric_summaries), 3),
+        "max_ms": round(max(m["max_ms"] for m in metric_summaries), 3),
+    }
+
+
+def aggregate_stage_runs(stage_runs, stage_name, index_enabled):
+    return {
+        "stage": stage_name,
+        "indexes_enabled": index_enabled,
+        "sql_ms": {
+            "list_posts": aggregate_metric_summaries([s["sql_ms"]["list_posts"] for s in stage_runs]),
+            "list_comments": aggregate_metric_summaries([s["sql_ms"]["list_comments"] for s in stage_runs]),
+        },
+        "api_ms": {
+            "list_posts": aggregate_metric_summaries([s["api_ms"]["list_posts"] for s in stage_runs]),
+            "list_comments": aggregate_metric_summaries([s["api_ms"]["list_comments"] for s in stage_runs]),
+        },
+        # EXPLAIN should remain stable across rounds for fixed SQL + indexes.
+        "explain": stage_runs[-1]["explain"],
+    }
+
+
+def median_speedup(round_summaries, key):
+    values = [s[key] for s in round_summaries if s[key] is not None]
+    if not values:
+        return None
+    return round(statistics.median(values), 3)
+
+
 def main():
     hotspot_post_id = ensure_benchmark_data()
     limit, offset = choose_benchmark_params()
     post_id = hotspot_post_id
 
-    before = run_stage("before_indexes", False, limit, offset, post_id)
-    after = run_stage("after_indexes", True, limit, offset, post_id)
+    round_results = []
+    for round_num in range(1, BENCH_ROUNDS + 1):
+        before = run_stage("before_indexes", False, limit, offset, post_id)
+        after = run_stage("after_indexes", True, limit, offset, post_id)
+
+        round_speedup = {
+            "posts_sql_speedup": speedup(before["sql_ms"]["list_posts"]["avg_ms"], after["sql_ms"]["list_posts"]["avg_ms"]),
+            "comments_sql_speedup": speedup(before["sql_ms"]["list_comments"]["avg_ms"], after["sql_ms"]["list_comments"]["avg_ms"]),
+            "posts_api_speedup": speedup(before["api_ms"]["list_posts"]["avg_ms"], after["api_ms"]["list_posts"]["avg_ms"]),
+            "comments_api_speedup": speedup(before["api_ms"]["list_comments"]["avg_ms"], after["api_ms"]["list_comments"]["avg_ms"]),
+        }
+
+        round_results.append(
+            {
+                "round": round_num,
+                "before": before,
+                "after": after,
+                "speedup": round_speedup,
+            }
+        )
+
+    before_agg = aggregate_stage_runs([r["before"] for r in round_results], "before_indexes", False)
+    after_agg = aggregate_stage_runs([r["after"] for r in round_results], "after_indexes", True)
 
     summary = {
-        "posts_sql_speedup": speedup(before["sql_ms"]["list_posts"]["avg_ms"], after["sql_ms"]["list_posts"]["avg_ms"]),
-        "comments_sql_speedup": speedup(before["sql_ms"]["list_comments"]["avg_ms"], after["sql_ms"]["list_comments"]["avg_ms"]),
-        "posts_api_speedup": speedup(before["api_ms"]["list_posts"]["avg_ms"], after["api_ms"]["list_posts"]["avg_ms"]),
-        "comments_api_speedup": speedup(before["api_ms"]["list_comments"]["avg_ms"], after["api_ms"]["list_comments"]["avg_ms"]),
+        "posts_sql_speedup": median_speedup([r["speedup"] for r in round_results], "posts_sql_speedup"),
+        "comments_sql_speedup": median_speedup([r["speedup"] for r in round_results], "comments_sql_speedup"),
+        "posts_api_speedup": median_speedup([r["speedup"] for r in round_results], "posts_api_speedup"),
+        "comments_api_speedup": median_speedup([r["speedup"] for r in round_results], "comments_api_speedup"),
     }
 
     output = {
@@ -420,11 +476,13 @@ def main():
         "benchmark_params": {
             "iterations": ITERATIONS,
             "warmup": WARMUP,
+            "rounds": BENCH_ROUNDS,
             "limit": limit,
             "offset": offset,
             "comment_post_id": post_id,
         },
-        "stages": [before, after],
+        "stages": [before_agg, after_agg],
+        "per_round": round_results,
         "speedup": summary,
     }
 
@@ -435,6 +493,7 @@ def main():
 
     print("Benchmark complete")
     print(f"Results: {out_file}")
+    print(f"Rounds: {BENCH_ROUNDS} (median-reported speedups)")
     print("Speedup summary:")
     for key, value in summary.items():
         print(f"  {key}: {value}x")

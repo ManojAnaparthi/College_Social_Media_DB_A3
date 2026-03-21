@@ -14,7 +14,8 @@ from database import DatabaseQueryError, execute_query
 
 app = FastAPI()
 
-SECRET_KEY = "your_secret_key"  # In production, use a secure method to store this
+# Read JWT secret from environment so it is not hardcoded in source.
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev_only_change_me")
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -93,11 +94,6 @@ class AdminMemberCreate(BaseModel):
     password: str
 
 
-class GroupMemberManage(BaseModel):
-    member_id: int
-    role: Literal["Admin", "Moderator", "Member"] = "Member"
-
-
 def _append_audit_entry(entry: dict) -> None:
     with open(AUDIT_LOG_PATH, "a", encoding="utf-8") as audit_file:
         audit_file.write(json.dumps(entry, default=str) + "\n")
@@ -163,20 +159,31 @@ def _verify_password(plain_password: str, stored_hash: str) -> bool:
         return False
 
 
-def _is_allowed_to_view_profile(viewer_id: int, viewer_role: str, target_member_id: int) -> bool:
-    if viewer_role == "Admin" or viewer_id == target_member_id:
-        return True
-
-    follows_target = execute_query(
+def _is_following(follower_id: int, following_id: int) -> bool:
+    row = execute_query(
         """
         SELECT 1
         FROM Follow
         WHERE FollowerID = %s AND FollowingID = %s
         """,
-        (viewer_id, target_member_id),
+        (follower_id, following_id),
         fetchone=True,
     )
-    return follows_target is not None
+    return row is not None
+
+
+def _get_follow_counts(member_id: int) -> tuple[int, int]:
+    followers = execute_query(
+        "SELECT COUNT(*) AS c FROM Follow WHERE FollowingID = %s",
+        (member_id,),
+        fetchone=True,
+    )
+    following = execute_query(
+        "SELECT COUNT(*) AS c FROM Follow WHERE FollowerID = %s",
+        (member_id,),
+        fetchone=True,
+    )
+    return int(followers["c"]), int(following["c"])
 
 
 def _get_visible_post(post_id: int, member_id: int):
@@ -339,21 +346,14 @@ def logout(_: dict = Depends(verify_session_token)):
 def get_portfolio(member_id: int, current_user: dict = Depends(verify_session_token)):
     """
     Retrieves portfolio details.
-    RBAC: Users can only view their own profile unless they are an Admin.
+    Any authenticated user can view portfolios (read-only).
     """
-    # 1. Enforce Role-Based Access Control (RBAC)
     viewer_id = current_user.get("member_id")
-    viewer_role = current_user.get("role")
-
     if viewer_id is None:
         raise HTTPException(status_code=401, detail="Invalid session payload")
 
-    if not _is_allowed_to_view_profile(viewer_id, viewer_role, member_id):
-        raise HTTPException(status_code=403, detail="You do not have permission to view this portfolio.")
-        
-    # 2. Fetch data from MySQL
     query = """
-        SELECT Name, Email, ContactNumber, Department, Age, Bio, JoinDate, Role
+        SELECT MemberID, Name, Email, ContactNumber, Department, Age, Bio, JoinDate, Role
         FROM Member
         WHERE MemberID = %s
     """
@@ -361,8 +361,175 @@ def get_portfolio(member_id: int, current_user: dict = Depends(verify_session_to
     
     if not portfolio:
         raise HTTPException(status_code=404, detail="Member not found.")
+
+    follower_count, following_count = _get_follow_counts(member_id)
+    is_self = viewer_id == member_id
+    viewer_is_following = False if is_self else _is_following(viewer_id, member_id)
+
+    portfolio["FollowerCount"] = follower_count
+    portfolio["FollowingCount"] = following_count
+    portfolio["ViewerIsFollowing"] = viewer_is_following
+    portfolio["ViewerCanFollow"] = not is_self
         
     return {"message": "Portfolio retrieved successfully", "data": portfolio}
+
+
+@app.get("/members/search")
+def search_members(
+    q: str = Query(min_length=1, max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: dict = Depends(verify_session_token),
+):
+    """Search members by name or email for authenticated users."""
+    if current_user.get("member_id") is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    term = f"%{q.strip()}%"
+    rows = execute_query(
+        """
+        SELECT MemberID, Name, Email, Department, Role, Bio
+        FROM Member
+        WHERE Name LIKE %s OR Email LIKE %s
+        ORDER BY Name ASC, MemberID ASC
+        LIMIT %s
+        """,
+        (term, term, limit),
+        fetchall=True,
+    )
+    return {
+        "message": "Members retrieved successfully",
+        "query": q,
+        "count": len(rows),
+        "data": rows,
+    }
+
+
+@app.get("/members/{member_id}/followers")
+def list_followers(
+    member_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: dict = Depends(verify_session_token),
+):
+    """List followers of a member for authenticated users."""
+    if current_user.get("member_id") is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    member_exists = execute_query("SELECT MemberID FROM Member WHERE MemberID = %s", (member_id,), fetchone=True)
+    if not member_exists:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    rows = execute_query(
+        """
+        SELECT f.FollowID, f.FollowDate, m.MemberID, m.Name, m.Email, m.Department, m.Role
+        FROM Follow f
+        JOIN Member m ON m.MemberID = f.FollowerID
+        WHERE f.FollowingID = %s
+        ORDER BY f.FollowDate DESC
+        LIMIT %s
+        """,
+        (member_id, limit),
+        fetchall=True,
+    )
+    return {"message": "Followers retrieved successfully", "count": len(rows), "data": rows}
+
+
+@app.get("/members/{member_id}/following")
+def list_following(
+    member_id: int,
+    limit: int = Query(default=50, ge=1, le=200),
+    current_user: dict = Depends(verify_session_token),
+):
+    """List members followed by the given member for authenticated users."""
+    if current_user.get("member_id") is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    member_exists = execute_query("SELECT MemberID FROM Member WHERE MemberID = %s", (member_id,), fetchone=True)
+    if not member_exists:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    rows = execute_query(
+        """
+        SELECT f.FollowID, f.FollowDate, m.MemberID, m.Name, m.Email, m.Department, m.Role
+        FROM Follow f
+        JOIN Member m ON m.MemberID = f.FollowingID
+        WHERE f.FollowerID = %s
+        ORDER BY f.FollowDate DESC
+        LIMIT %s
+        """,
+        (member_id, limit),
+        fetchall=True,
+    )
+    return {"message": "Following list retrieved successfully", "count": len(rows), "data": rows}
+
+
+@app.post("/members/{member_id}/follow")
+def follow_member(member_id: int, request: Request, current_user: dict = Depends(verify_session_token)):
+    """Follow a member. Authenticated users can follow anyone except themselves."""
+    follower_id = current_user.get("member_id")
+    if follower_id is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    if follower_id == member_id:
+        raise HTTPException(status_code=400, detail="You cannot follow yourself")
+
+    target = execute_query("SELECT MemberID FROM Member WHERE MemberID = %s", (member_id,), fetchone=True)
+    if not target:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    if _is_following(follower_id, member_id):
+        raise HTTPException(status_code=400, detail="Already following this member")
+
+    follow_id = execute_query(
+        "INSERT INTO Follow (FollowerID, FollowingID) VALUES (%s, %s)",
+        (follower_id, member_id),
+        audit_context=_db_audit_context(action="follow_create", current_user=current_user, request=request),
+    )
+    _audit_log(
+        action="follow_create",
+        actor_id=follower_id,
+        actor_role=current_user.get("role"),
+        endpoint=str(request.url.path),
+        method=request.method,
+        table="Follow",
+        target_id=follow_id,
+        outcome="success",
+        details=f"Member {follower_id} followed member {member_id}",
+    )
+    return {"message": "Followed member successfully", "follow_id": follow_id}
+
+
+@app.delete("/members/{member_id}/follow")
+def unfollow_member(member_id: int, request: Request, current_user: dict = Depends(verify_session_token)):
+    """Unfollow a member. Authenticated users can only remove their own follow edge."""
+    follower_id = current_user.get("member_id")
+    if follower_id is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    follow_row = execute_query(
+        "SELECT FollowID FROM Follow WHERE FollowerID = %s AND FollowingID = %s",
+        (follower_id, member_id),
+        fetchone=True,
+    )
+    if not follow_row:
+        raise HTTPException(status_code=404, detail="Follow relationship not found")
+
+    execute_query(
+        "DELETE FROM Follow WHERE FollowID = %s",
+        (follow_row["FollowID"],),
+        audit_context=_db_audit_context(action="follow_delete", current_user=current_user, request=request),
+    )
+    _audit_log(
+        action="follow_delete",
+        actor_id=follower_id,
+        actor_role=current_user.get("role"),
+        endpoint=str(request.url.path),
+        method=request.method,
+        table="Follow",
+        target_id=follow_row["FollowID"],
+        outcome="success",
+        details=f"Member {follower_id} unfollowed member {member_id}",
+    )
+    return {"message": "Unfollowed member successfully"}
 
 @app.put("/portfolio/{member_id}")
 def update_portfolio(
@@ -479,7 +646,8 @@ def list_posts(
     current_user: dict = Depends(verify_session_token),
 ):
     """Read all active posts for the authenticated user session."""
-    if current_user.get("member_id") is None:
+    member_id = current_user.get("member_id")
+    if member_id is None:
         raise HTTPException(status_code=401, detail="Invalid session payload")
 
     query = """
@@ -494,15 +662,134 @@ def list_posts(
             p.LastEditDate,
             p.Visibility,
             p.LikeCount,
-            p.CommentCount
+            p.CommentCount,
+            EXISTS (
+                SELECT 1
+                FROM `Like` l
+                WHERE l.MemberID = %s
+                  AND l.TargetType = 'Post'
+                  AND l.TargetID = p.PostID
+            ) AS ViewerHasLiked
         FROM Post p
         JOIN Member m ON p.MemberID = m.MemberID
         WHERE p.IsActive = TRUE
+          AND (
+              p.Visibility = 'Public'
+              OR p.MemberID = %s
+              OR (
+                  p.Visibility = 'Followers'
+                  AND EXISTS (
+                      SELECT 1
+                      FROM Follow f
+                      WHERE f.FollowerID = %s
+                        AND f.FollowingID = p.MemberID
+                  )
+              )
+          )
         ORDER BY p.PostDate DESC, p.PostID DESC
         LIMIT %s OFFSET %s
     """
-    posts = execute_query(query, (limit, offset), fetchall=True)
+    posts = execute_query(query, (member_id, member_id, member_id, limit, offset), fetchall=True)
     return {"message": "Posts retrieved successfully", "count": len(posts), "data": posts}
+
+
+@app.get("/members/{member_id}/posts")
+def list_member_posts(
+    member_id: int,
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    current_user: dict = Depends(verify_session_token),
+):
+    """List posts authored by a member, filtered by viewer visibility rules."""
+    viewer_id = current_user.get("member_id")
+    viewer_role = current_user.get("role")
+    if viewer_id is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    member_exists = execute_query(
+        "SELECT MemberID FROM Member WHERE MemberID = %s",
+        (member_id,),
+        fetchone=True,
+    )
+    if not member_exists:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    if viewer_role == "Admin" or viewer_id == member_id:
+        query = """
+            SELECT
+                p.PostID,
+                p.MemberID,
+                m.Name AS AuthorName,
+                p.Content,
+                p.MediaURL,
+                p.MediaType,
+                p.PostDate,
+                p.LastEditDate,
+                p.Visibility,
+                p.LikeCount,
+                p.CommentCount,
+                EXISTS (
+                    SELECT 1
+                    FROM `Like` l
+                    WHERE l.MemberID = %s
+                      AND l.TargetType = 'Post'
+                      AND l.TargetID = p.PostID
+                ) AS ViewerHasLiked
+            FROM Post p
+            JOIN Member m ON p.MemberID = m.MemberID
+            WHERE p.MemberID = %s
+              AND p.IsActive = TRUE
+            ORDER BY p.PostDate DESC, p.PostID DESC
+            LIMIT %s OFFSET %s
+        """
+        posts = execute_query(query, (viewer_id, member_id, limit, offset), fetchall=True)
+    else:
+        query = """
+            SELECT
+                p.PostID,
+                p.MemberID,
+                m.Name AS AuthorName,
+                p.Content,
+                p.MediaURL,
+                p.MediaType,
+                p.PostDate,
+                p.LastEditDate,
+                p.Visibility,
+                p.LikeCount,
+                p.CommentCount,
+                EXISTS (
+                    SELECT 1
+                    FROM `Like` l
+                    WHERE l.MemberID = %s
+                      AND l.TargetType = 'Post'
+                      AND l.TargetID = p.PostID
+                ) AS ViewerHasLiked
+            FROM Post p
+            JOIN Member m ON p.MemberID = m.MemberID
+            WHERE p.MemberID = %s
+              AND p.IsActive = TRUE
+              AND (
+                    p.Visibility = 'Public'
+                    OR (
+                        p.Visibility = 'Followers'
+                        AND EXISTS (
+                            SELECT 1
+                            FROM Follow f
+                            WHERE f.FollowerID = %s
+                              AND f.FollowingID = p.MemberID
+                        )
+                    )
+                  )
+            ORDER BY p.PostDate DESC, p.PostID DESC
+            LIMIT %s OFFSET %s
+        """
+        posts = execute_query(query, (viewer_id, member_id, viewer_id, limit, offset), fetchall=True)
+
+    return {
+        "message": "Member posts retrieved successfully",
+        "count": len(posts),
+        "data": posts,
+    }
 
 
 @app.get("/posts/{post_id}")
@@ -529,7 +816,14 @@ def get_post(post_id: int, current_user: dict = Depends(verify_session_token)):
             p.Visibility,
             p.LikeCount,
             p.CommentCount,
-            p.IsActive
+                        p.IsActive,
+                        EXISTS (
+                                SELECT 1
+                                FROM `Like` l
+                                WHERE l.MemberID = %s
+                                    AND l.TargetType = 'Post'
+                                    AND l.TargetID = p.PostID
+                        ) AS ViewerHasLiked
         FROM Post p
         JOIN Member m ON p.MemberID = m.MemberID
         WHERE p.PostID = %s
@@ -547,10 +841,78 @@ def get_post(post_id: int, current_user: dict = Depends(verify_session_token)):
               )
           )
     """
-    post = execute_query(query, (post_id, member_id, member_id), fetchone=True)
+    post = execute_query(query, (member_id, post_id, member_id, member_id), fetchone=True)
     if not post:
         raise HTTPException(status_code=404, detail="Post not found or not visible")
     return {"message": "Post retrieved successfully", "data": post}
+
+
+@app.post("/posts/{post_id}/like/toggle")
+def toggle_post_like(post_id: int, request: Request, current_user: dict = Depends(verify_session_token)):
+    """Toggle like/unlike for a visible post using the Like table."""
+    member_id = current_user.get("member_id")
+    if member_id is None:
+        raise HTTPException(status_code=401, detail="Invalid session payload")
+
+    if not _get_visible_post(post_id, member_id):
+        raise HTTPException(status_code=404, detail="Post not found or not visible")
+
+    existing = execute_query(
+        """
+        SELECT LikeID
+        FROM `Like`
+        WHERE MemberID = %s AND TargetType = 'Post' AND TargetID = %s
+        """,
+        (member_id, post_id),
+        fetchone=True,
+    )
+
+    if existing:
+        execute_query(
+            "DELETE FROM `Like` WHERE LikeID = %s",
+            (existing["LikeID"],),
+            audit_context=_db_audit_context(action="post_unlike", current_user=current_user, request=request),
+        )
+        execute_query(
+            "UPDATE Post SET LikeCount = GREATEST(LikeCount - 1, 0) WHERE PostID = %s",
+            (post_id,),
+            audit_context=_db_audit_context(action="post_unlike", current_user=current_user, request=request),
+        )
+        liked = False
+        action_name = "post_unlike"
+    else:
+        like_id = execute_query(
+            "INSERT INTO `Like` (MemberID, TargetType, TargetID) VALUES (%s, 'Post', %s)",
+            (member_id, post_id),
+            audit_context=_db_audit_context(action="post_like", current_user=current_user, request=request),
+        )
+        execute_query(
+            "UPDATE Post SET LikeCount = LikeCount + 1 WHERE PostID = %s",
+            (post_id,),
+            audit_context=_db_audit_context(action="post_like", current_user=current_user, request=request),
+        )
+        liked = True
+        action_name = "post_like"
+
+    post_row = execute_query("SELECT LikeCount FROM Post WHERE PostID = %s", (post_id,), fetchone=True)
+    like_count = int(post_row["LikeCount"]) if post_row else 0
+
+    _audit_log(
+        action=action_name,
+        actor_id=member_id,
+        actor_role=current_user.get("role"),
+        endpoint=str(request.url.path),
+        method=request.method,
+        table="Like,Post",
+        target_id=post_id,
+        outcome="success",
+        details=f"Member {member_id} {'liked' if liked else 'unliked'} post {post_id}",
+    )
+    return {
+        "message": "Post liked" if liked else "Post unliked",
+        "liked": liked,
+        "like_count": like_count,
+    }
 
 
 @app.post("/posts/{post_id}/comments")
@@ -947,104 +1309,6 @@ def delete_member_admin(member_id: int, request: Request, current_user: dict = D
         details="Admin deleted member",
     )
     return {"message": f"Member {member_id} deleted successfully"}
-
-
-@app.post("/admin/groups/{group_id}/members")
-def add_group_member_admin(
-    group_id: int,
-    payload: GroupMemberManage,
-    request: Request,
-    current_user: dict = Depends(verify_session_token),
-):
-    """Admin-only: add/reactivate a member in a group and set group role."""
-    _require_admin(request, current_user)
-
-    group_exists = execute_query("SELECT GroupID FROM `Group` WHERE GroupID = %s", (group_id,), fetchone=True)
-    if not group_exists:
-        raise HTTPException(status_code=404, detail="Group not found")
-
-    member_exists = execute_query("SELECT MemberID FROM Member WHERE MemberID = %s", (payload.member_id,), fetchone=True)
-    if not member_exists:
-        raise HTTPException(status_code=404, detail="Member not found")
-
-    current_entry = execute_query(
-        "SELECT GroupMemberID, IsActive FROM GroupMember WHERE GroupID = %s AND MemberID = %s",
-        (group_id, payload.member_id),
-        fetchone=True,
-    )
-
-    if current_entry and current_entry["IsActive"]:
-        raise HTTPException(status_code=400, detail="Member already active in this group")
-
-    if current_entry:
-        execute_query(
-            """
-            UPDATE GroupMember
-            SET Role = %s, IsActive = TRUE
-            WHERE GroupID = %s AND MemberID = %s
-            """,
-            (payload.role, group_id, payload.member_id),
-            audit_context=_db_audit_context(action="admin_group_member_add", current_user=current_user, request=request),
-        )
-    else:
-        execute_query(
-            """
-            INSERT INTO GroupMember (GroupID, MemberID, Role, IsActive)
-            VALUES (%s, %s, %s, TRUE)
-            """,
-            (group_id, payload.member_id, payload.role),
-            audit_context=_db_audit_context(action="admin_group_member_add", current_user=current_user, request=request),
-        )
-
-    _audit_log(
-        action="admin_group_member_add",
-        actor_id=current_user.get("member_id"),
-        actor_role=current_user.get("role"),
-        endpoint=str(request.url.path),
-        method=request.method,
-        table="GroupMember",
-        target_id=payload.member_id,
-        outcome="success",
-        details=f"Added member {payload.member_id} to group {group_id} with role {payload.role}",
-    )
-    return {"message": "Group member updated successfully"}
-
-
-@app.delete("/admin/groups/{group_id}/members/{member_id}")
-def remove_group_member_admin(
-    group_id: int,
-    member_id: int,
-    request: Request,
-    current_user: dict = Depends(verify_session_token),
-):
-    """Admin-only: remove (soft deactivate) a member from group."""
-    _require_admin(request, current_user)
-
-    entry = execute_query(
-        "SELECT GroupMemberID, IsActive FROM GroupMember WHERE GroupID = %s AND MemberID = %s",
-        (group_id, member_id),
-        fetchone=True,
-    )
-    if not entry or not entry["IsActive"]:
-        raise HTTPException(status_code=404, detail="Active group membership not found")
-
-    execute_query(
-        "UPDATE GroupMember SET IsActive = FALSE WHERE GroupID = %s AND MemberID = %s",
-        (group_id, member_id),
-        audit_context=_db_audit_context(action="admin_group_member_remove", current_user=current_user, request=request),
-    )
-    _audit_log(
-        action="admin_group_member_remove",
-        actor_id=current_user.get("member_id"),
-        actor_role=current_user.get("role"),
-        endpoint=str(request.url.path),
-        method=request.method,
-        table="GroupMember",
-        target_id=member_id,
-        outcome="success",
-        details=f"Removed member {member_id} from group {group_id}",
-    )
-    return {"message": "Group member removed successfully"}
 
 
 @app.get("/admin/audit-log")

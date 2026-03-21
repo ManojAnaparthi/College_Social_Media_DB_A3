@@ -9,9 +9,10 @@
 <body data-page="portfolio">
   <header class="topbar">
     <div class="brand">College Social Media Platform</div>
-    <button id="menu-toggle" class="hamburger" aria-label="Open navigation">☰</button>
+    <button id="menu-toggle" class="hamburger" aria-label="Open navigation">Menu</button>
     <nav id="mobile-nav" class="mobile-nav hidden">
       <a href="/static/portfolio.html" class="nav-link">Portfolio</a>
+      <a href="/static/search.html" class="nav-link">Search Members</a>
       <a href="/static/create-post.html" class="nav-link">Create Post</a>
       <a href="/static/posts.html" class="nav-link">Posts</a>
       <button id="logout-btn" class="nav-logout" type="button">Logout</button>
@@ -23,14 +24,7 @@
       <h2>My Portfolio</h2>
       <div id="portfolio-view" class="panel"></div>
 
-      <h3>View Member Profile</h3>
-      <form id="member-view-form">
-        <label>Member ID</label>
-        <input type="number" id="member_id_lookup" min="1" required />
-        <button type="submit">View Profile</button>
-      </form>
-      <div id="member-view-status" class="status"></div>
-      <div id="member-portfolio-view" class="panel hidden"></div>
+      <p class="status">View other members from <a href="/static/search.html">Search Members</a> or by clicking author names on posts.</p>
 
       <h3>Update Portfolio</h3>
       <form id="portfolio-form">
@@ -50,6 +44,19 @@
       </form>
       <div id="portfolio-status" class="status"></div>
 
+      <h3>Followers / Following</h3>
+      <div class="panel">
+        <p><strong>Followers</strong></p>
+        <ul id="my-followers-list"></ul>
+        <p><strong>Following</strong></p>
+        <ul id="my-following-list"></ul>
+      </div>
+      <div id="my-network-status" class="status"></div>
+
+      <h3>My Posts</h3>
+      <div id="my-post-status" class="status"></div>
+      <div id="my-post-list"></div>
+
       <section id="admin-panel" class="hidden">
         <h3>Admin Controls</h3>
         <p class="status">Only Admin users can perform these actions.</p>
@@ -61,37 +68,6 @@
           <button type="submit">Delete Member</button>
         </form>
         <div id="admin-delete-member-status" class="status"></div>
-
-        <h4>Add Group Member</h4>
-        <form id="admin-add-group-member-form">
-          <label>Group ID</label>
-          <input type="number" id="admin_group_id" min="1" required />
-
-          <label>Member ID</label>
-          <input type="number" id="admin_member_id" min="1" required />
-
-          <label>Role</label>
-          <select id="admin_group_role">
-            <option>Member</option>
-            <option>Moderator</option>
-            <option>Admin</option>
-          </select>
-
-          <button type="submit">Add or Reactivate Group Member</button>
-        </form>
-        <div id="admin-add-group-member-status" class="status"></div>
-
-        <h4>Remove Group Member</h4>
-        <form id="admin-remove-group-member-form">
-          <label>Group ID</label>
-          <input type="number" id="admin_remove_group_id" min="1" required />
-
-          <label>Member ID</label>
-          <input type="number" id="admin_remove_member_id" min="1" required />
-
-          <button type="submit">Remove Group Member</button>
-        </form>
-        <div id="admin-remove-group-member-status" class="status"></div>
       </section>
     </section>
   </main>

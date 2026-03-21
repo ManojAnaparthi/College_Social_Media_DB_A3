@@ -27,7 +27,7 @@ INSERT INTO Member (Name, Email, ContactNumber, Image, CollegeID, Role, Departme
 ('Divya Nair', 'divya.nair@iitgn.ac.in', '9876543225', 'divya.jpg', 'IITGN2021014', 'Student', 'Computer Science', 24, TRUE, 'CS senior | Full stack dev | Placement coordinator'),
 ('Abhishek Pandey', 'abhishek.pandey@iitgn.ac.in', '9876543226', 'abhishek.jpg', 'IITGN2022015', 'Student', 'Mechanical Engineering', 22, TRUE, 'Mech | Thermodynamics | Sports enthusiast'),
 ('Sakshi Jain', 'sakshi.jain@iitgn.ac.in', '9876543227', 'sakshi.jpg', 'IITGN2023016', 'Student', 'Chemical Engineering', 21, TRUE, 'ChemE | Process design | Dance team'),
-('Varun Saxena', 'varun.saxena@iitgn.ac.in', '9876543228', 'varun.jpg', 'IITGN2018STAFF01', 'Staff', 'Administration', 34, TRUE, 'Network Administrator | IT Support'),
+('Varun Saxena', 'varun.saxena@iitgn.ac.in', '9876543228', 'varun.jpg', 'IITGN2018STAFF01', 'Admin', 'Administration', 34, TRUE, 'Network Administrator | IT Support'),
 ('Kavya Krishnan', 'kavya.krishnan@iitgn.ac.in', '9876543229', 'kavya.jpg', 'IITGN2024017', 'Student', 'Computer Science', 18, TRUE, 'CS freshman | AI/ML | Competitive programmer');
 
 -- ============================================================================
@@ -57,7 +57,7 @@ INSERT INTO AuthCredential (MemberID, PasswordHash) VALUES
 (20, '$2b$12$ZlrjAqIhjysU8/Z2DSHfceI56lty5MluK3gvjNdSvPkRTe.Yh3.D.');
 
 -- ============================================================================
--- Insert Sample Data into Follow Table (20 rows)
+-- Insert Sample Data into Follow Table (30 rows)
 -- ============================================================================
 INSERT INTO Follow (FollowerID, FollowingID) VALUES
 (1, 2), (1, 3), (1, 6), (1, 10),
@@ -66,6 +66,10 @@ INSERT INTO Follow (FollowerID, FollowingID) VALUES
 (6, 1), (6, 10), (6, 13),
 (10, 1), (10, 6),
 (3, 1), (5, 2), (7, 4), (8, 1), (12, 6);
+
+INSERT INTO Follow (FollowerID, FollowingID) VALUES
+(9, 10), (11, 4), (13, 6), (14, 1), (15, 2),
+(16, 1), (17, 4), (18, 6), (19, 10), (20, 1);
 
 -- ============================================================================
 -- Insert Sample Data into Post Table (20 rows)

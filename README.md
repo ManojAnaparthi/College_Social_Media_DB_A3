@@ -169,7 +169,7 @@ This section documents the implementation status for Module B SubTask 1, SubTask
 ### Scope Covered
 
 - SubTask 1: Local environment setup and core/project data integrity
-- SubTask 2: Session-validated APIs and web UI for CRUD + member portfolio with restricted access
+- SubTask 2: Session-validated APIs and web UI for CRUD + member portfolio + follow/follower flows
 - SubTask 3: Strict RBAC and security logging with unauthorized direct-DB-change traceability
 
 ### Module B Structure
@@ -184,7 +184,9 @@ Module_B/
 |   `-- static/
 |       |-- login.html       # Login page
 |       |-- signup.html      # Optional demo signup page
-|       |-- portfolio.html   # Portfolio page with member profile lookup
+|       |-- portfolio.html   # My portfolio page
+|       |-- member-profile.html # Other member profile page (read-only + follow)
+|       |-- search.html      # Member search page
 |       |-- create-post.html # Dedicated create post page
 |       |-- posts.html       # Dedicated posts listing page
 |       |-- app.js           # Frontend logic and navigation
@@ -227,6 +229,7 @@ If you are on Windows PowerShell, set the DB password environment variable befor
 
 ```powershell
 $env:DB_PASSWORD="<your-mysql-password>"
+$env:JWT_SECRET_KEY="<your-random-secret>"
 
 cd Module_B/app
 uvicorn main:app --reload --port 8001
@@ -236,6 +239,7 @@ Optional (persist across new PowerShell sessions):
 
 ```powershell
 setx DB_PASSWORD "<your-mysql-password>"
+setx JWT_SECRET_KEY "<your-random-secret>"
 ```
 **DON'T TRY TO SET THE PASSWORD IN database.py**
 
@@ -247,12 +251,13 @@ setx DB_PASSWORD "<your-mysql-password>"
   - `before_indexes`: drops optimization indexes that help tested endpoints.
   - `after_indexes`: creates only targeted optimization indexes.
 - FK-support baseline indexes are kept in both stages so schema integrity is preserved.
+- To reduce run-to-run noise, the benchmark executes multiple rounds and reports median speedups.
 
 ### Targeted indexes and API mapping
 
 1. `idx_post_active_postdate_postid ON Post(IsActive, PostDate DESC, PostID DESC)`
    - API query pattern: post feed listing
-  - Clauses targeted: `WHERE p.IsActive = TRUE`, `ORDER BY p.PostDate DESC, p.PostID DESC`
+  - Clauses targeted: `WHERE p.IsActive = TRUE` with visibility filtering, `ORDER BY p.PostDate DESC, p.PostID DESC`
 
 2. `idx_comment_post_active_date ON Comment(PostID, IsActive, CommentDate ASC)`
    - API query pattern: comments under a post
@@ -270,11 +275,11 @@ Schema location: `Module_B/sql/schema.sql`
 ### Latest measured impact
 
 - SQL speedup:
-  - posts: `1.151x`
-  - comments: `1.075x`
+  - posts: `1.19x`
+  - comments: `1.165x`
 - API speedup:
-  - posts: `0.957x`
-  - comments: `1.099x`
+  - posts: `0.949x`
+  - comments: `1.069x`
 
 
 4. Open UI:
@@ -311,6 +316,11 @@ Implemented APIs (session-aware):
 - Portfolio:
   - `GET /portfolio/{member_id}`
   - `PUT /portfolio/{member_id}`
+- Follow graph:
+  - `GET /members/{member_id}/followers`
+  - `GET /members/{member_id}/following`
+  - `POST /members/{member_id}/follow`
+  - `DELETE /members/{member_id}/follow`
 - Project table CRUD (`Post`):
   - `POST /posts`
   - `GET /posts`
@@ -327,7 +337,9 @@ Implemented web UI pages:
 
 - `login.html`: authentication page
 - `signup.html`: optional demo self-signup page
-- `portfolio.html`: own portfolio + restricted member profile lookup by MemberID
+- `portfolio.html`: own portfolio (self profile and edits)
+- `member-profile.html`: read-only view of other member portfolios + follow toggle + follower/following lists + member posts
+- `search.html`: member search page for navigation/discovery
 - `create-post.html`: dedicated create-post form
 - `posts.html`: dedicated all-posts listing with edit/delete controls
   - Current behavior: loads the latest 30 posts per request (`GET /posts?limit=30&offset=0`).
@@ -338,14 +350,12 @@ Session validation behavior:
 - Login uses bcrypt hash verification only (no dummy-password fallback).
 - UI stores session locally and redirects unauthenticated users to login.
 
-Member Portfolio access restriction behavior:
+Member Portfolio access behavior:
 
 - Only authenticated users can access portfolio pages/endpoints.
-- Users can view:
-  - their own profile
-  - admin-authorized profiles
-  - profiles permitted by access rule logic in backend
-- Unauthorized profile requests return permission errors and are shown clearly in UI.
+- Any authenticated user can view any member profile (read-only).
+- Editing remains restricted to own profile or Admin via `PUT /portfolio/{member_id}`.
+- Users can follow/unfollow other members and view follower/following lists in the member profile page.
 
 ### SubTask 3: Role-Based Access Control (RBAC) and Security Logging
 
@@ -353,7 +363,6 @@ Implemented RBAC behavior:
 
 - Admin-only actions are enforced for core administrative operations:
   - Member management (`/admin/members`, `/admin/members/{member_id}`)
-  - Group membership administration (`/admin/groups/{group_id}/members`, `/admin/groups/{group_id}/members/{member_id}`)
 - Official member creation path is admin-managed via `/admin/members`.
 - Public `/signup` is kept only as an optional demo convenience and always creates `Student` role accounts.
 - Regular users are restricted to their own modifiable records for portfolio/posts/comments where applicable.
@@ -371,7 +380,7 @@ Direct database modification traceability (unauthorized detection):
 
 - Dedicated DB write log table:
   - `ApiWriteLog` in `Module_B/sql/schema.sql`
-- Triggers record write source for key tables (`Member`, `Post`, `Comment`, `GroupMember`) and classify writes as:
+- Triggers record write source for key tables (`Member`, `Post`, `Comment`, `GroupMember`, `Follow`, `Like`) and classify writes as:
   - `API` (authorized session-validated API write)
   - `DIRECT_DB` (direct SQL write, treated as unauthorized)
 - Admin endpoint for DB-level change review:
@@ -386,8 +395,8 @@ This ensures any direct DB write that bypasses API/session validation is easily 
   - Done via Post and Comment API endpoints + dedicated UI pages.
 - "Ensure every API call validates user session via local auth":
   - Done for protected business endpoints through token validation dependency.
-- "Member Portfolio with authenticated and permission-restricted viewing":
-  - Done via portfolio endpoints and UI lookup workflow with backend authorization checks.
+- "Member Portfolio with authenticated viewing and restricted edit permissions":
+  - Done via public read-only portfolio endpoint for authenticated users and owner/admin-only update path.
 - "Strict RBAC (Admin vs Regular User) for API/UI operations":
   - Done via admin-only endpoint guard and owner/admin checks on update/delete flows.
 - "Log all data-modifying API calls locally and identify unauthorized direct DB modifications":

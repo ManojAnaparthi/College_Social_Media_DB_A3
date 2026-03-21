@@ -179,20 +179,91 @@ button:hover {
   background: #fcfefe;
 }
 
-.post-actions {
+.post-header-row {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 0.6rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
 }
 
-.post-actions button {
-  width: auto;
+.post-header-text {
+  margin: 0;
   flex: 1;
 }
 
-.post-actions button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.post-menu {
+  margin-top: 0;
+}
+
+.post-menu summary {
+  width: fit-content;
+  list-style: none;
+  cursor: pointer;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  user-select: none;
+}
+
+.post-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.post-menu-items {
+  margin-top: 0.45rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.post-menu-items button {
+  width: auto;
+  margin-top: 0;
+}
+
+.post-item .like-row {
+  margin-top: 0.35rem;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.post-item button.like-toggle-icon {
+  width: 2rem !important;
+  min-width: 2rem !important;
+  max-width: 2rem !important;
+  height: 2rem !important;
+  display: inline-flex !important;
+  justify-content: center;
+  align-items: center;
+  margin-top: 0 !important;
+  padding: 0 !important;
+  border-radius: 999px;
+  border: 1px solid var(--border) !important;
+  background: #ffffff !important;
+  color: var(--muted) !important;
+}
+
+.post-item button.like-toggle-icon:hover {
+  background: #f3faf8;
+}
+
+.post-item button.like-toggle-icon.liked {
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fff5f5;
+}
+
+.like-icon {
+  font-size: 0.85rem;
+  margin-right: 0;
+}
+
+.like-count {
+  font-size: 0.9rem;
+  color: var(--muted);
+  font-weight: 600;
 }
 
 #admin-panel {

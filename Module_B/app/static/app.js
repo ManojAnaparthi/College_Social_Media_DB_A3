@@ -3,6 +3,7 @@ const USER_KEY = "csm_current_user";
 
 let sessionToken = localStorage.getItem(TOKEN_KEY) || "";
 let currentUser = null;
+let viewedMemberId = null;
 
 try {
   currentUser = JSON.parse(localStorage.getItem(USER_KEY) || "null");
@@ -125,6 +126,8 @@ function renderPortfolio(data) {
     <p><strong>Department:</strong> ${data.Department ?? ""}</p>
     <p><strong>Age:</strong> ${data.Age ?? ""}</p>
     <p><strong>Role:</strong> ${data.Role}</p>
+    <p><strong>Followers:</strong> ${data.FollowerCount ?? 0}</p>
+    <p><strong>Following:</strong> ${data.FollowingCount ?? 0}</p>
     <p><strong>Bio:</strong> ${data.Bio ?? ""}</p>
   `;
 
@@ -141,45 +144,358 @@ function renderMemberPortfolio(data) {
   }
   panel.classList.remove("hidden");
   panel.innerHTML = `
+    <p><strong>Member ID:</strong> ${data.MemberID}</p>
     <p><strong>Name:</strong> ${data.Name}</p>
     <p><strong>Email:</strong> ${data.Email}</p>
     <p><strong>Contact:</strong> ${data.ContactNumber ?? ""}</p>
     <p><strong>Department:</strong> ${data.Department ?? ""}</p>
     <p><strong>Age:</strong> ${data.Age ?? ""}</p>
     <p><strong>Role:</strong> ${data.Role}</p>
+    <p><strong>Followers:</strong> ${data.FollowerCount ?? 0}</p>
+    <p><strong>Following:</strong> ${data.FollowingCount ?? 0}</p>
     <p><strong>Bio:</strong> ${data.Bio ?? ""}</p>
   `;
 }
 
-function renderPosts(posts) {
-  const postList = document.getElementById("post-list");
+function syncMemberAdminEditPanel(data) {
+  const panel = document.getElementById("member-admin-edit-panel");
+  if (!panel) {
+    return;
+  }
+
+  if (!isAdminUser()) {
+    panel.classList.add("hidden");
+    return;
+  }
+
+  panel.classList.remove("hidden");
+
+  const target = document.getElementById("member-admin-edit-target");
+  if (target) {
+    target.textContent = `Editing member #${data.MemberID} (${data.Name})`;
+  }
+
+  const bio = document.getElementById("member_admin_bio");
+  const contact = document.getElementById("member_admin_contact_number");
+  const department = document.getElementById("member_admin_department");
+  const age = document.getElementById("member_admin_age");
+
+  if (bio) bio.value = data.Bio ?? "";
+  if (contact) contact.value = data.ContactNumber ?? "";
+  if (department) department.value = data.Department ?? "";
+  if (age) age.value = data.Age ?? "";
+}
+
+function renderFollowList(listId, rows) {
+  const list = document.getElementById(listId);
+  if (!list) {
+    return;
+  }
+
+  list.innerHTML = "";
+  if (!rows || rows.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No entries";
+    list.appendChild(li);
+    return;
+  }
+
+  rows.forEach((row) => {
+    const li = document.createElement("li");
+    li.textContent = `#${row.MemberID} ${row.Name} (${row.Role}, ${row.Department ?? "N/A"})`;
+    list.appendChild(li);
+  });
+}
+
+function setMemberFollowActions(data) {
+  const actions = document.getElementById("member-follow-actions");
+  const toggleBtn = document.getElementById("follow-toggle-btn");
+
+  if (!actions || !toggleBtn) {
+    return;
+  }
+
+  if (!data?.ViewerCanFollow) {
+    actions.classList.add("hidden");
+    toggleBtn.dataset.following = "false";
+    toggleBtn.textContent = "Follow";
+    return;
+  }
+
+  actions.classList.remove("hidden");
+  const alreadyFollowing = Boolean(data.ViewerIsFollowing);
+  toggleBtn.dataset.following = alreadyFollowing ? "true" : "false";
+  toggleBtn.textContent = alreadyFollowing ? "Unfollow" : "Follow";
+}
+
+async function loadMemberNetworkData(memberId) {
+  const [followersRes, followingRes] = await Promise.all([
+    fetch(`/members/${memberId}/followers?limit=50`, { method: "GET", headers: apiHeaders() }),
+    fetch(`/members/${memberId}/following?limit=50`, { method: "GET", headers: apiHeaders() }),
+  ]);
+
+  const followersPayload = await parseApiResponse(followersRes);
+  const followingPayload = await parseApiResponse(followingRes);
+
+  if (!followersRes.ok) {
+    setStatus("member-network-status", followersPayload.detail || "Failed to load followers", true);
+    return;
+  }
+  if (!followingRes.ok) {
+    setStatus("member-network-status", followingPayload.detail || "Failed to load following", true);
+    return;
+  }
+
+  renderFollowList("member-followers-list", followersPayload.data || []);
+  renderFollowList("member-following-list", followingPayload.data || []);
+  setStatus("member-network-status", "Followers and following loaded");
+}
+
+async function refreshViewedMember() {
+  if (!viewedMemberId) {
+    return;
+  }
+
+  const res = await fetch(`/portfolio/${viewedMemberId}`, {
+    method: "GET",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+  if (!res.ok) {
+    setStatus("member-view-status", payload.detail || "Unable to reload member profile", true);
+    return;
+  }
+
+  renderMemberPortfolio(payload.data);
+  syncMemberAdminEditPanel(payload.data);
+  setMemberFollowActions(payload.data);
+  await loadMemberNetworkData(viewedMemberId);
+  await loadMemberPosts(viewedMemberId);
+}
+
+async function loadMemberPosts(memberId) {
+  const res = await fetch(`/members/${memberId}/posts?limit=30&offset=0`, {
+    method: "GET",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+  if (!res.ok) {
+    setStatus("member-post-status", payload.detail || "Failed to load member posts", true);
+    return;
+  }
+
+  renderMemberPosts(payload.data || []);
+  setStatus("member-post-status", `${payload.count ?? 0} post(s) loaded`);
+}
+
+async function loadMyNetworkData() {
+  if (!currentUser?.member_id) {
+    return;
+  }
+
+  const memberId = Number(currentUser.member_id);
+  const [followersRes, followingRes] = await Promise.all([
+    fetch(`/members/${memberId}/followers?limit=50`, { method: "GET", headers: apiHeaders() }),
+    fetch(`/members/${memberId}/following?limit=50`, { method: "GET", headers: apiHeaders() }),
+  ]);
+
+  const followersPayload = await parseApiResponse(followersRes);
+  const followingPayload = await parseApiResponse(followingRes);
+
+  if (!followersRes.ok) {
+    setStatus("my-network-status", followersPayload.detail || "Failed to load followers", true);
+    return;
+  }
+  if (!followingRes.ok) {
+    setStatus("my-network-status", followingPayload.detail || "Failed to load following", true);
+    return;
+  }
+
+  renderFollowList("my-followers-list", followersPayload.data || []);
+  renderFollowList("my-following-list", followingPayload.data || []);
+  setStatus("my-network-status", "Followers and following loaded");
+}
+
+async function loadMyPosts() {
+  if (!currentUser?.member_id) {
+    return;
+  }
+
+  const memberId = Number(currentUser.member_id);
+  const res = await fetch(`/members/${memberId}/posts?limit=30&offset=0`, {
+    method: "GET",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+  if (!res.ok) {
+    setStatus("my-post-status", payload.detail || "Failed to load posts", true);
+    return;
+  }
+
+  renderPostsInto("my-post-list", payload.data || [], false);
+  setStatus("my-post-status", `${payload.count ?? 0} post(s) loaded`);
+}
+
+async function loadMemberProfile(memberIdRaw) {
+  if (!currentUser) {
+    setStatus("member-view-status", "Please login first", true);
+    return;
+  }
+
+  const memberId = Number(memberIdRaw);
+  if (!Number.isInteger(memberId) || memberId < 1) {
+    setStatus("member-view-status", "Enter a valid Member ID", true);
+    return;
+  }
+
+  viewedMemberId = memberId;
+  const panel = document.getElementById("member-portfolio-view");
+  if (panel) {
+    panel.classList.add("hidden");
+  }
+
+  const res = await fetch(`/portfolio/${memberId}`, {
+    method: "GET",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+
+  if (!res.ok) {
+    setStatus("member-view-status", payload.detail || "Unable to load member profile", true);
+    return;
+  }
+
+  setStatus("member-view-status", payload.message || "Profile loaded");
+  renderMemberPortfolio(payload.data);
+  syncMemberAdminEditPanel(payload.data);
+  setMemberFollowActions(payload.data);
+  await loadMemberNetworkData(viewedMemberId);
+  await loadMemberPosts(viewedMemberId);
+}
+
+function renderPostsInto(containerId, posts, allowOwnerMenu = true) {
+  const postList = document.getElementById(containerId);
+  if (!postList) {
+    return;
+  }
   postList.innerHTML = "";
 
   posts.forEach((post) => {
     const isOwner = Number(currentUser?.member_id) === Number(post.MemberID);
-    const isAdmin = currentUser?.role === "Admin";
-    const canModify = isOwner || isAdmin;
+    const viewerHasLiked = Boolean(post.ViewerHasLiked);
 
     const div = document.createElement("div");
     div.className = "post-item";
-    div.innerHTML = `
-      <p><strong>#${post.PostID}</strong> by ${post.AuthorName} (${post.Visibility})</p>
-      <p>${post.Content}</p>
-      <p><small>${post.PostDate}</small></p>
-      <div class="post-actions">
-        <button data-action="edit" data-id="${post.PostID}" data-can-modify="${canModify}">Edit</button>
-        <button data-action="delete" data-id="${post.PostID}" data-can-modify="${canModify}">Delete</button>
-      </div>
-    `;
+    const ownerActions = allowOwnerMenu && isOwner
+      ? `
+      <details class="post-menu">
+        <summary title="Post actions">...</summary>
+        <div class="post-menu-items">
+          <button data-action="edit" data-id="${post.PostID}" data-owner="true">Edit</button>
+          <button data-action="delete" data-id="${post.PostID}" data-owner="true">Delete</button>
+        </div>
+      </details>
+    `
+      : "";
 
-    const buttons = div.querySelectorAll("button[data-can-modify='false']");
-    buttons.forEach((btn) => {
-      btn.disabled = true;
-      btn.title = "Only post owner or admin can modify";
-    });
+    div.innerHTML = `
+      <div class="post-header-row">
+        <p class="post-header-text"><strong>#${post.PostID}</strong> by <a href="/static/member-profile.html?member_id=${post.MemberID}">${post.AuthorName}</a> (${post.Visibility})</p>
+        ${ownerActions}
+      </div>
+      <p>${post.Content}</p>
+        <div class="like-row">
+        <button type="button" class="like-toggle-icon ${viewerHasLiked ? "liked" : ""}" data-action="toggle-like" data-id="${post.PostID}" data-liked="${viewerHasLiked ? "true" : "false"}" title="Toggle like" aria-label="Toggle like">
+            <span class="like-icon" aria-hidden="true">&#9829;</span>
+          </button>
+          <span class="like-count">${post.LikeCount ?? 0}</span>
+        </div>
+      <p><small>${post.PostDate}</small></p>
+    `;
 
     postList.appendChild(div);
   });
+}
+
+function renderPosts(posts) {
+  renderPostsInto("post-list", posts, true);
+}
+
+function renderMemberPosts(posts) {
+  renderPostsInto("member-post-list", posts, false);
+}
+
+function renderMemberSearchResults(rows) {
+  const list = document.getElementById("member-search-results");
+  if (!list) {
+    return;
+  }
+
+  list.innerHTML = "";
+  if (!rows || rows.length === 0) {
+    const li = document.createElement("li");
+    li.textContent = "No members found";
+    list.appendChild(li);
+    return;
+  }
+
+  rows.forEach((row) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<a href="/static/member-profile.html?member_id=${row.MemberID}">#${row.MemberID} ${row.Name}</a> - ${row.Email} (${row.Role}, ${row.Department ?? "N/A"})`;
+    list.appendChild(li);
+  });
+}
+
+function getLikeCountElement(toggleButton) {
+  return toggleButton.parentElement?.querySelector(".like-count") || null;
+}
+
+function applyLikeUI(toggleButton, liked, likeCount) {
+  toggleButton.dataset.liked = liked ? "true" : "false";
+  toggleButton.classList.toggle("liked", liked);
+  const likeCountEl = getLikeCountElement(toggleButton);
+  if (likeCountEl) {
+    likeCountEl.textContent = String(likeCount);
+  }
+}
+
+async function handleLikeToggle(toggleButton, statusId) {
+  if (toggleButton.dataset.busy === "true") {
+    return;
+  }
+
+  const postId = toggleButton.dataset.id;
+  if (!postId) {
+    return;
+  }
+
+  const currentlyLiked = toggleButton.dataset.liked === "true";
+  const likeCountEl = getLikeCountElement(toggleButton);
+  const currentCount = likeCountEl ? Number(likeCountEl.textContent || "0") : 0;
+  const nextLiked = !currentlyLiked;
+  const nextCount = Math.max(currentCount + (nextLiked ? 1 : -1), 0);
+
+  // Optimistic update for snappy UX while request is in-flight.
+  applyLikeUI(toggleButton, nextLiked, nextCount);
+  toggleButton.dataset.busy = "true";
+  toggleButton.disabled = true;
+
+  const res = await fetch(`/posts/${postId}/like/toggle`, {
+    method: "POST",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+
+  toggleButton.dataset.busy = "false";
+  toggleButton.disabled = false;
+
+  if (!res.ok) {
+    applyLikeUI(toggleButton, currentlyLiked, currentCount);
+    setStatus(statusId, payload.detail || "Like toggle failed", true);
+    return;
+  }
+
+  applyLikeUI(toggleButton, Boolean(payload.liked), Number(payload.like_count ?? 0));
 }
 
 function initAdminControls() {
@@ -210,48 +526,6 @@ function initAdminControls() {
         return;
       }
       setStatus("admin-delete-member-status", payload.message || "Member deleted");
-    });
-  }
-
-  const addGroupMemberForm = document.getElementById("admin-add-group-member-form");
-  if (addGroupMemberForm) {
-    addGroupMemberForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const groupId = document.getElementById("admin_group_id").value;
-      const memberId = document.getElementById("admin_member_id").value;
-      const role = document.getElementById("admin_group_role").value;
-
-      const res = await fetch(`/admin/groups/${groupId}/members`, {
-        method: "POST",
-        headers: apiHeaders(),
-        body: JSON.stringify({ member_id: Number(memberId), role }),
-      });
-      const payload = await parseApiResponse(res);
-      if (!res.ok) {
-        setStatus("admin-add-group-member-status", payload.detail || "Add group member failed", true);
-        return;
-      }
-      setStatus("admin-add-group-member-status", payload.message || "Group member added");
-    });
-  }
-
-  const removeGroupMemberForm = document.getElementById("admin-remove-group-member-form");
-  if (removeGroupMemberForm) {
-    removeGroupMemberForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const groupId = document.getElementById("admin_remove_group_id").value;
-      const memberId = document.getElementById("admin_remove_member_id").value;
-
-      const res = await fetch(`/admin/groups/${groupId}/members/${memberId}`, {
-        method: "DELETE",
-        headers: apiHeaders(),
-      });
-      const payload = await parseApiResponse(res);
-      if (!res.ok) {
-        setStatus("admin-remove-group-member-status", payload.detail || "Remove group member failed", true);
-        return;
-      }
-      setStatus("admin-remove-group-member-status", payload.message || "Group member removed");
     });
   }
 }
@@ -391,6 +665,8 @@ function initPortfolioPage() {
       return;
     }
     fetchMyPortfolio();
+    loadMyNetworkData();
+    loadMyPosts();
     initAdminControls();
   });
 
@@ -423,42 +699,181 @@ function initPortfolioPage() {
 
     setStatus("portfolio-status", payload.message || "Portfolio updated");
     await fetchMyPortfolio();
+    await loadMyNetworkData();
+    await loadMyPosts();
   });
 
-  const memberViewForm = document.getElementById("member-view-form");
-  if (memberViewForm) {
-    memberViewForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-      if (!currentUser) {
-        setStatus("member-view-status", "Please login first", true);
+  const myPostList = document.getElementById("my-post-list");
+  if (myPostList) {
+    myPostList.addEventListener("click", async (e) => {
+      const clicked = e.target;
+      if (!(clicked instanceof Element)) {
         return;
       }
 
-      const memberId = document.getElementById("member_id_lookup").value;
-      const panel = document.getElementById("member-portfolio-view");
-      if (panel) {
-        panel.classList.add("hidden");
-      }
-
-      const res = await fetch(`/portfolio/${memberId}`, {
-        method: "GET",
-        headers: apiHeaders(),
-      });
-      const payload = await res.json();
-
-      if (!res.ok) {
-        if (res.status === 403) {
-          setStatus("member-view-status", "You do not have permission to view this profile.", true);
-          return;
-        }
-        setStatus("member-view-status", payload.detail || "Unable to load member profile", true);
+      const target = clicked.closest("button[data-action]");
+      if (!(target instanceof HTMLButtonElement)) {
         return;
       }
 
-      setStatus("member-view-status", payload.message || "Profile loaded");
-      renderMemberPortfolio(payload.data);
+      if (target.dataset.action !== "toggle-like") {
+        return;
+      }
+
+      await handleLikeToggle(target, "my-post-status");
     });
   }
+
+}
+
+function initMemberProfilePage() {
+  setupHamburgerAndLogout();
+  requireAuth().then(async (user) => {
+    if (!user) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    const memberId = params.get("member_id");
+    if (!memberId) {
+      setStatus("member-view-status", "Missing member_id in URL", true);
+      return;
+    }
+    await loadMemberProfile(memberId);
+  });
+
+  const toggleBtn = document.getElementById("follow-toggle-btn");
+  if (toggleBtn) {
+    toggleBtn.addEventListener("click", async () => {
+      if (!viewedMemberId) {
+        setStatus("member-follow-action-status", "Load a member profile first", true);
+        return;
+      }
+
+      const isFollowing = toggleBtn.dataset.following === "true";
+      const method = isFollowing ? "DELETE" : "POST";
+      const pendingText = isFollowing ? "Unfollowing..." : "Following...";
+      const failureText = isFollowing ? "Unfollow failed" : "Follow failed";
+
+      setStatus("member-follow-action-status", pendingText);
+      toggleBtn.disabled = true;
+
+      const res = await fetch(`/members/${viewedMemberId}/follow`, {
+        method,
+        headers: apiHeaders(),
+      });
+      const payload = await parseApiResponse(res);
+      toggleBtn.disabled = false;
+
+      if (!res.ok) {
+        setStatus("member-follow-action-status", payload.detail || failureText, true);
+        return;
+      }
+
+      setStatus("member-follow-action-status", payload.message || "Updated follow status");
+      await refreshViewedMember();
+    });
+  }
+
+  const memberPostList = document.getElementById("member-post-list");
+  if (memberPostList) {
+    memberPostList.addEventListener("click", async (e) => {
+      const clicked = e.target;
+      if (!(clicked instanceof Element)) {
+        return;
+      }
+
+      const target = clicked.closest("button[data-action]");
+      if (!(target instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      const action = target.dataset.action;
+      if (action !== "toggle-like") {
+        return;
+      }
+
+      await handleLikeToggle(target, "member-post-status");
+    });
+  }
+
+  const memberAdminEditForm = document.getElementById("member-admin-edit-form");
+  if (memberAdminEditForm) {
+    memberAdminEditForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      if (!isAdminUser()) {
+        setStatus("member-admin-edit-status", "Admin access required", true);
+        return;
+      }
+
+      if (!viewedMemberId) {
+        setStatus("member-admin-edit-status", "Load a member profile first", true);
+        return;
+      }
+
+      const body = {
+        bio: document.getElementById("member_admin_bio")?.value ?? "",
+        contact_number: document.getElementById("member_admin_contact_number")?.value ?? "",
+        department: document.getElementById("member_admin_department")?.value ?? "",
+        age: document.getElementById("member_admin_age")?.value
+          ? Number(document.getElementById("member_admin_age").value)
+          : null,
+      };
+
+      const res = await fetch(`/portfolio/${viewedMemberId}`, {
+        method: "PUT",
+        headers: apiHeaders(),
+        body: JSON.stringify(body),
+      });
+      const payload = await parseApiResponse(res);
+
+      if (!res.ok) {
+        setStatus("member-admin-edit-status", payload.detail || "Update failed", true);
+        return;
+      }
+
+      setStatus("member-admin-edit-status", payload.message || "Profile updated");
+      await refreshViewedMember();
+    });
+  }
+}
+
+function initSearchMembersPage() {
+  setupHamburgerAndLogout();
+  requireAuth().then((user) => {
+    if (!user) {
+      return;
+    }
+  });
+
+  const form = document.getElementById("member-search-form");
+  if (!form) {
+    return;
+  }
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const query = document.getElementById("member_search_query").value.trim();
+    if (!query) {
+      setStatus("member-search-status", "Enter a name or email", true);
+      return;
+    }
+
+    setStatus("member-search-status", "Searching...");
+    const res = await fetch(`/members/search?q=${encodeURIComponent(query)}&limit=30`, {
+      method: "GET",
+      headers: apiHeaders(),
+    });
+    const payload = await parseApiResponse(res);
+    if (!res.ok) {
+      setStatus("member-search-status", payload.detail || "Search failed", true);
+      return;
+    }
+
+    setStatus("member-search-status", `${payload.count ?? 0} member(s) found`);
+    renderMemberSearchResults(payload.data || []);
+  });
 }
 
 function initPostsPage() {
@@ -479,20 +894,29 @@ function initPostsPage() {
   });
 
   document.getElementById("post-list").addEventListener("click", async (e) => {
-    const target = e.target;
+    const clicked = e.target;
+    if (!(clicked instanceof Element)) {
+      return;
+    }
+
+    const target = clicked.closest("button[data-action]");
     if (!(target instanceof HTMLButtonElement)) {
       return;
     }
 
     const action = target.dataset.action;
     const postId = target.dataset.id;
-    const canModify = target.dataset.canModify === "true";
+    const ownerButton = target.dataset.owner === "true";
     if (!action || !postId) {
       return;
     }
 
-    if ((action === "edit" || action === "delete") && !canModify) {
-      alert("You can only modify your own posts.");
+    if (action === "toggle-like") {
+      await handleLikeToggle(target, "post-create-status");
+      return;
+    }
+
+    if ((action === "edit" || action === "delete") && !ownerButton) {
       return;
     }
 
@@ -607,4 +1031,12 @@ if (page === "posts") {
 
 if (page === "create-post") {
   initCreatePostPage();
+}
+
+if (page === "search-members") {
+  initSearchMembersPage();
+}
+
+if (page === "member-profile") {
+  initMemberProfilePage();
 }
