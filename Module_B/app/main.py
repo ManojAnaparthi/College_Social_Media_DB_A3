@@ -436,7 +436,7 @@ def list_posts(
         FROM Post p
         JOIN Member m ON p.MemberID = m.MemberID
         WHERE p.IsActive = TRUE
-        ORDER BY p.PostDate DESC
+        ORDER BY p.PostDate DESC, p.PostID DESC
         LIMIT %s OFFSET %s
     """
     posts = execute_query(query, (limit, offset), fetchall=True)

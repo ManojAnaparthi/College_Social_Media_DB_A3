@@ -265,14 +265,9 @@ CREATE TABLE ApiWriteLog (
 CREATE INDEX idx_post_member ON Post(MemberID);
 CREATE INDEX idx_comment_post ON Comment(PostID);
 CREATE INDEX idx_comment_member ON Comment(MemberID);
-
--- Targeted SubTask 4 indexes, aligned with API query WHERE/ORDER BY patterns.
--- 1) Post feed query: WHERE IsActive = TRUE ORDER BY PostDate DESC
-CREATE INDEX idx_post_active_postdate ON Post(IsActive, PostDate DESC);
 -- 2) Comment listing query: WHERE PostID = ? AND IsActive = TRUE ORDER BY CommentDate ASC
 CREATE INDEX idx_comment_post_active_date ON Comment(PostID, IsActive, CommentDate ASC);
-
--- ============================================================================
+CREATE INDEX idx_post_active_postdate_postid ON Post(IsActive, PostDate DESC, PostID DESC);
 -- TRIGGERS for Business Rule Enforcement
 -- Note: These triggers replace CHECK constraints that conflict with foreign key
 --       CASCADE actions (MySQL Error 3823)

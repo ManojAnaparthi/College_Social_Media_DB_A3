@@ -33,7 +33,7 @@ LIST_POSTS_SQL = """
     FROM Post p
     JOIN Member m ON p.MemberID = m.MemberID
     WHERE p.IsActive = TRUE
-    ORDER BY p.PostDate DESC
+    ORDER BY p.PostDate DESC, p.PostID DESC
     LIMIT %s OFFSET %s
 """
 
@@ -65,6 +65,7 @@ BEFORE_STAGE_DROP_INDEXES = [
     # Drop query-speed indexes for strict pre-optimization baseline.
     ("Post", "idx_post_date"),
     ("Post", "idx_post_active_postdate"),
+    ("Post", "idx_post_active_postdate_postid"),
     ("Post", "idx_post_active_date_member"),
     ("Post", "idx_post_date_active"),
     ("Comment", "idx_comment_post_active_date"),
@@ -73,8 +74,8 @@ BEFORE_STAGE_DROP_INDEXES = [
 AFTER_STAGE_INDEX_DEFS = [
     (
         "Post",
-        "idx_post_active_postdate",
-        "CREATE INDEX idx_post_active_postdate ON Post(IsActive, PostDate DESC)",
+        "idx_post_active_postdate_postid",
+        "CREATE INDEX idx_post_active_postdate_postid ON Post(IsActive, PostDate DESC, PostID DESC)",
     ),
     (
         "Comment",
@@ -227,8 +228,11 @@ def percentile(values, pct):
 
 
 def summarize_times(values):
+    ordered = sorted(values)
+    median_ms = statistics.median(ordered)
     return {
         "avg_ms": round(statistics.mean(values), 3),
+        "median_ms": round(median_ms, 3),
         "p95_ms": round(percentile(values, 95), 3),
         "min_ms": round(min(values), 3),
         "max_ms": round(max(values), 3),

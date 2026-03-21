@@ -244,9 +244,9 @@ setx DB_PASSWORD "<your-mysql-password>"
 
 ### Targeted indexes and API mapping
 
-1. `idx_post_active_postdate ON Post(IsActive, PostDate DESC)`
+1. `idx_post_active_postdate_postid ON Post(IsActive, PostDate DESC, PostID DESC)`
    - API query pattern: post feed listing
-   - Clauses targeted: `WHERE p.IsActive = TRUE`, `ORDER BY p.PostDate DESC`
+  - Clauses targeted: `WHERE p.IsActive = TRUE`, `ORDER BY p.PostDate DESC, p.PostID DESC`
 
 2. `idx_comment_post_active_date ON Comment(PostID, IsActive, CommentDate ASC)`
    - API query pattern: comments under a post
@@ -264,11 +264,11 @@ Schema location: `Module_B/sql/schema.sql`
 ### Latest measured impact
 
 - SQL speedup:
-  - posts: `0.995x`
-  - comments: `1.556x`
+  - posts: `1.129x`
+  - comments: `1.162x`
 - API speedup:
-  - posts: `0.998x`
-  - comments: `1.163x`
+  - posts: `0.983x`
+  - comments: `1.045x`
 
 ### EXPLAIN plan change proof (comments endpoint)
 
