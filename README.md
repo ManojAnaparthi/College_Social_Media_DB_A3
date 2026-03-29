@@ -15,8 +15,12 @@ College_Social_Media_DB/
 |       |-- bruteforce.py
 |       |-- table.py
 |       |-- db_manager.py
+|       |-- transaction_manager.py
+|       |-- sql_sanity.py
 |       |-- performance.py
 |       |-- run_performance_tests.py
+|       |-- test_acid_validation.py
+|       |-- test_acid_multirelation.py
 |       |-- visualizations_generator.py
 |       |-- performance_results_jpgs/
 |       `-- visualizations/
@@ -74,6 +78,35 @@ This runs performance testing for different random key set sizes and generates:
 - SubTask 3: Graphviz visualization for tree structure and leaf links
 - SubTask 4: Performance testing across different random key set sizes with Matplotlib plots
 - Additional Layer: In-memory table/database manager API built on top of B+ Tree index
+- Assignment 3 Module A Layer: Multi-relation ACID transactions, failure recovery, and SQL sanity-check validation
+
+## Module A ACID Validation (Assignment 3)
+
+### Design Summary
+
+- B+ Tree is the primary storage for each relation.
+- `DBManager` holds multiple relations, each backed by a separate B+ Tree.
+- `TransactionManager` provides `BEGIN`, `COMMIT`, and `ROLLBACK` across multiple relations.
+- Isolation is implemented as serialized execution (single active write transaction).
+- Durability and restart recovery use committed database snapshots.
+- SQL (`sqlite3`) is used as a reference/sanity-check store to compare final state with B+ Tree state.
+
+### ACID Components
+
+- Multi-relation transaction coordinator: `Module_A/database/transaction_manager.py`
+- Database-level snapshot import/export and persistence: `Module_A/database/db_manager.py`
+- Table-level state export/restore helpers: `Module_A/database/table.py`
+- SQL reference comparator: `Module_A/database/sql_sanity.py`
+- Single-table ACID tests: `Module_A/database/test_acid_validation.py`
+- Multi-relation ACID tests (users/products/orders): `Module_A/database/test_acid_multirelation.py`
+
+### Run Module A ACID Tests
+
+From project root:
+
+```bash
+python -m unittest Module_A.database.test_acid_validation Module_A.database.test_acid_multirelation -v
+```
 
 ## B+ Tree Implementation (SubTask 1)
 
@@ -156,7 +189,7 @@ print(db.list_tables())
 ### Notes
 
 - Primary key type is integer (`int`) to match B+ Tree indexing.
-- This layer is in-memory only (no persistence yet).
+- Table-level and database-level JSON snapshot persistence is available for recovery testing.
 
 ## Module B: Local API, UI, and Security (SubTask 1, 2, and 3)
 
@@ -211,6 +244,7 @@ SOURCE Module_B/sql/sample_data.sql;
 ```
 
 Sample login note:
+
 - `Module_B/sql/sample_passwords.txt` contains the sample user IDs/emails and their demo credentials.
 - All seeded sample users share the same password: `password123`.
 
@@ -221,7 +255,9 @@ $env:DB_PASSWORD="<your-mysql-password>"
 $jwt = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
 $env:JWT_SECRET_KEY = $jwt
 ```
+
 Run the Live UI:
+
 ```
 cd Module_B/app
 uvicorn main:app --reload --port 8001
@@ -233,6 +269,7 @@ Optional (persist across new PowerShell sessions):
 setx DB_PASSWORD "<your-mysql-password>"
 setx JWT_SECRET_KEY "<your-random-secret>"
 ```
+
 **DON'T TRY TO SET THE PASSWORD OR KEY IN database.py**
 
 ## Module B SubTask 4 and 5 (Indexing + Benchmarking)
@@ -263,7 +300,8 @@ This keeps the benchmark evidence transparent and MySQL-compatible.
 
 1. `idx_post_active_postdate_postid ON Post(IsActive, PostDate DESC, PostID DESC)`
    - API query pattern: post feed listing
-  - Clauses targeted: `WHERE p.IsActive = TRUE` with visibility filtering, `ORDER BY p.PostDate DESC, p.PostID DESC`
+
+- Clauses targeted: `WHERE p.IsActive = TRUE` with visibility filtering, `ORDER BY p.PostDate DESC, p.PostID DESC`
 
 2. `idx_comment_post_active_date ON Comment(PostID, IsActive, CommentDate ASC)`
    - API query pattern: comments under a post
@@ -295,7 +333,6 @@ The JSON includes:
   - comments: `1.111`
 - The benchmark values are environment-dependent and are regenerated from the notebook run.
 - Use `Module_B/performance/index_benchmark_results.json` as the source of truth for current speedups and before/after metrics.
-
 
 4. Open UI:
 
