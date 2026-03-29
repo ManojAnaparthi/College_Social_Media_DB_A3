@@ -220,6 +220,23 @@ class Table:
 
         return table
 
+    def export_state(self) -> Dict[str, Any]:
+        """Return a serializable snapshot of table metadata and rows."""
+        return {
+            "name": self.name,
+            "primary_key": self.primary_key,
+            "schema": sorted(self.schema) if self.schema is not None else None,
+            "bplustree_order": self._index.order,
+            "rows": [row for _, row in self.all_rows()],
+        }
+
+    def restore_state(self, state: Dict[str, Any]) -> None:
+        """Restore current table content from an exported state payload."""
+        rows = state.get("rows", [])
+        self.truncate()
+        for row in rows:
+            self.upsert(row)
+
     def _snapshot_state(self) -> List[Dict[str, Any]]:
         return [row for _, row in self.all_rows()]
 
