@@ -202,13 +202,13 @@ This repository now includes a dedicated Module B runner for Assignment 3 valida
 What it executes in one run:
 
 - Concurrent usage simulation:
-  - High-volume parallel `GET /posts` requests
+  - High-volume parallel `GET /posts` requests from multiple authenticated users
   - Captures success rate, throughput, and latency (`avg`, `p50`, `p95`)
 - Race-condition test (critical operation):
-  - Many concurrent `POST /members/{member_id}/follow` attempts
-  - Verifies final relationship cardinality is exactly one
+  - Many users concurrently execute `POST /members/{member_id}/follow` on the same target member
+  - Verifies exactly one follow edge per unique user and no duplicate rows
 - Failure simulation:
-  - Mixed valid and intentionally invalid concurrent `POST /posts/{post_id}/comments`
+  - Mixed valid and intentionally invalid concurrent `POST /posts/{post_id}/comments` from multiple users
   - Verifies failed operations do not cause partial count inconsistencies
 - Consistency checks:
   - Validates `Post.LikeCount` vs `Like` rows
@@ -235,6 +235,15 @@ $env:JWT_SECRET_KEY = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Ra
 
 3. Ensure MySQL service is running.
 
+```powershell
+$mysqlService = Get-Service | Where-Object { $_.Name -match "mysql" -or $_.DisplayName -match "mysql" } | Select-Object -First 1
+if (-not $mysqlService) { throw "No MySQL service found. Start MySQL manually and retry." }
+if ($mysqlService.Status -ne "Running") { Start-Service -Name $mysqlService.Name }
+Get-Service -Name $mysqlService.Name
+```
+
+If `Start-Service` fails due to permissions, run PowerShell as Administrator.
+
 4. Run SQL schema and sample data dumps.
 
 ```powershell
@@ -256,7 +265,7 @@ python -m uvicorn main:app --host 127.0.0.1 --port 8001
 $env:DB_HOST = "localhost"
 $env:DB_USER = "root"
 $env:DB_PASSWORD = "<your-mysql-password>"
-python Module_B/performance/run_module_b_concurrency_stress.py --base-url http://127.0.0.1:8001 --username rahul.sharma@iitgn.ac.in --password password123 --post-id 1 --race-requests 200 --failure-requests 120 --stress-requests 1000
+python Module_B/performance/run_module_b_concurrency_stress.py --base-url http://127.0.0.1:8001 --usernames "rahul.sharma@iitgn.ac.in,priya.patel@iitgn.ac.in,ananya.singh@iitgn.ac.in,neha.desai@iitgn.ac.in,aditya.verma@iitgn.ac.in" --password password123 --post-id 1 --race-requests 200 --failure-requests 120 --stress-requests 1000
 ```
 
 Expected output summary:
@@ -279,7 +288,7 @@ Source artifact:
 Executed configuration:
 
 - Base URL: `http://127.0.0.1:8001`
-- User: `rahul.sharma@iitgn.ac.in`
+- Users: `5` authenticated sample users
 - Race test: `200` requests, `40` workers
 - Failure simulation: `120` requests, `24` workers
 - Stress test: `1000` requests, `80` workers
@@ -295,17 +304,21 @@ Measured metrics:
 
 - Race-condition test (`POST /members/{member_id}/follow`):
   - Success responses: `200/200`
-  - Final relation count (`FollowerID`, `FollowingID`): `1`
-  - Latency: avg `190.882 ms`, p95 `250.252 ms`
+  - Unique users used: `5`
+  - Final relation count: `5` (one follow edge per participating user, no duplicates)
+  - Latency: avg `147.834 ms`, p95 `168.291 ms`
 - Failure simulation (`POST /posts/{post_id}/comments`, mixed valid+invalid):
+  - Unique users used: `5`
   - HTTP status histogram: `200=60`, `400=60`
   - Expected comment delta: `60`, actual comment delta: `60`
   - Cleanup rows soft-deleted: `60`
+  - Latency: avg `79.303 ms`, p95 `102.009 ms`
   - Post counter consistency remained valid before and after test
 - Stress test (parallel `GET /posts`):
+  - Unique users used: `5`
   - Success rate: `1.0` (`1000/1000`)
-  - Throughput: `295.85 req/s`
-  - Latency: avg `259.644 ms`, p95 `300.963 ms`
+  - Throughput: `406.486 req/s`
+  - Latency: avg `188.61 ms`, p95 `237.783 ms`
 
 ### Transaction and race-safety hardening in API layer
 
@@ -329,7 +342,7 @@ The following changes were implemented to satisfy concurrent workload, failure h
 
 2. Race-condition control for shared operations
 
-- Updated follow creation flow in `POST /members/{member_id}/follow` to be idempotent under concurrent attempts.
+- Updated follow creation flow in `POST /members/{member_id}/follow` to be idempotent under concurrent attempts from many users.
 - Updated post like toggle flow in `POST /posts/{post_id}/like/toggle` to perform row-level lock/read-modify-write in one transaction.
 
 3. Failure handling without partial writes
@@ -340,9 +353,9 @@ The following changes were implemented to satisfy concurrent workload, failure h
 4. Stress and correctness validation tooling
 
 - Added `Module_B/performance/run_module_b_concurrency_stress.py` to execute:
-  - concurrent usage test
-  - race-condition test
-  - failure simulation test
+  - concurrent multi-user usage test
+  - multi-user race-condition test
+  - multi-user failure simulation test
   - high-load stress test
 - Added consistency assertions in the runner for:
   - `Post.LikeCount` vs `Like` rows
@@ -352,5 +365,5 @@ The following changes were implemented to satisfy concurrent workload, failure h
 
 - Atomicity: multi-step writes are wrapped in transactions.
 - Consistency: pre/post consistency checks pass in generated report.
-- Isolation (practical): race test confirms single follow edge under 200 concurrent attempts.
+- Isolation (practical): race test confirms one follow edge per unique user under concurrent attempts.
 - Durability: committed changes are persisted in MySQL and captured in report artifacts.

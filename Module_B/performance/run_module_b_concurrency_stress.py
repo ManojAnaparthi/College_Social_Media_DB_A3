@@ -39,6 +39,14 @@ DB_USER = os.getenv("DB_USER", "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "password")
 DB_NAME = os.getenv("DB_NAME", "college_social_media")
 
+DEFAULT_USERNAMES = [
+    "rahul.sharma@iitgn.ac.in",
+    "priya.patel@iitgn.ac.in",
+    "ananya.singh@iitgn.ac.in",
+    "neha.desai@iitgn.ac.in",
+    "aditya.verma@iitgn.ac.in",
+]
+
 
 def _now_utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -232,6 +240,28 @@ def _fetch_follow_relation_count(follower_id: int, following_id: int) -> int:
         conn.close()
 
 
+def _fetch_follow_stats_for_target(target_member_id: int, follower_ids: list[int]) -> dict[str, int]:
+    if not follower_ids:
+        return {"total_rows": 0, "distinct_followers": 0}
+
+    conn = _db_connect()
+    try:
+        placeholders = ", ".join(["%s"] * len(follower_ids))
+        query = (
+            f"SELECT COUNT(*) AS total_rows, COUNT(DISTINCT FollowerID) AS distinct_followers "
+            f"FROM Follow WHERE FollowingID = %s AND FollowerID IN ({placeholders})"
+        )
+        with conn.cursor() as cursor:
+            cursor.execute(query, (target_member_id, *follower_ids))
+            row = cursor.fetchone()
+            return {
+                "total_rows": int(row["total_rows"]),
+                "distinct_followers": int(row["distinct_followers"]),
+            }
+    finally:
+        conn.close()
+
+
 def _fetch_member_id_by_email(email: str) -> int:
     conn = _db_connect()
     try:
@@ -243,6 +273,29 @@ def _fetch_member_id_by_email(email: str) -> int:
             return int(row["MemberID"])
     finally:
         conn.close()
+
+
+def _parse_usernames(usernames_arg: str) -> list[str]:
+    seen: set[str] = set()
+    parsed: list[str] = []
+    for value in usernames_arg.split(","):
+        email = value.strip()
+        if not email:
+            continue
+        if email in seen:
+            continue
+        seen.add(email)
+        parsed.append(email)
+    return parsed
+
+
+def _build_user_sessions(base_url: str, usernames: list[str], password: str) -> list[dict[str, Any]]:
+    sessions: list[dict[str, Any]] = []
+    for username in usernames:
+        token = _login(base_url, username, password)
+        member_id = _fetch_member_id_by_email(username)
+        sessions.append({"username": username, "member_id": member_id, "token": token})
+    return sessions
 
 
 def _cleanup_generated_comments(post_id: int, content_prefix: str) -> int:
@@ -286,37 +339,54 @@ def _cleanup_generated_comments(post_id: int, content_prefix: str) -> int:
 def run_follow_race_test(
     *,
     base_url: str,
-    token: str,
-    follower_id: int,
+    sessions: list[dict[str, Any]],
     target_member_id: int,
     race_requests: int,
     race_workers: int,
 ) -> dict[str, Any]:
-    _api_request(base_url=base_url, method="DELETE", path=f"/members/{target_member_id}/follow", token=token)
+    eligible_sessions = [s for s in sessions if int(s["member_id"]) != target_member_id]
+    if not eligible_sessions:
+        raise RuntimeError("No eligible users available for follow race test")
+
+    for session in eligible_sessions:
+        _api_request(
+            base_url=base_url,
+            method="DELETE",
+            path=f"/members/{target_member_id}/follow",
+            token=str(session["token"]),
+        )
 
     started = time.perf_counter()
     lock = threading.Lock()
     statuses: list[int] = []
     latencies: list[float] = []
+    attempted_member_ids: list[int] = []
 
-    def worker(_: int) -> dict[str, Any]:
+    def worker(i: int) -> dict[str, Any]:
+        session = eligible_sessions[i % len(eligible_sessions)]
+        member_id = int(session["member_id"])
         resp = _api_request(
             base_url=base_url,
             method="POST",
             path=f"/members/{target_member_id}/follow",
-            token=token,
+            token=str(session["token"]),
         )
         with lock:
             statuses.append(int(resp["status"]))
             latencies.append(float(resp["elapsed_ms"]))
+            attempted_member_ids.append(member_id)
         return resp
 
     responses = _run_parallel(race_requests, race_workers, worker)
     elapsed = time.perf_counter() - started
 
-    relation_count = _fetch_follow_relation_count(follower_id, target_member_id)
+    unique_followers = sorted(set(attempted_member_ids))
+    follow_stats = _fetch_follow_stats_for_target(target_member_id, unique_followers)
+    relation_count = follow_stats["total_rows"]
+    distinct_followers = follow_stats["distinct_followers"]
     ok_statuses = sum(1 for s in statuses if s == 200)
-    relation_is_unique = relation_count == 1
+    relation_is_unique = relation_count == len(unique_followers)
+    no_duplicate_rows = relation_count == distinct_followers
 
     return {
         "requests": race_requests,
@@ -328,8 +398,10 @@ def run_follow_race_test(
         "success_responses": ok_statuses,
         "latency": _latency_stats(latencies),
         "follow_relation_count": relation_count,
-        "race_passed": relation_is_unique,
-        "details": "Pass requires exactly one follow edge after all concurrent attempts",
+        "distinct_followers": distinct_followers,
+        "unique_users_used": len(unique_followers),
+        "race_passed": relation_is_unique and no_duplicate_rows,
+        "details": "Pass requires one follow edge per unique concurrent user and no duplicates",
         "sample_response": responses[0]["body"] if responses else {},
     }
 
@@ -337,7 +409,7 @@ def run_follow_race_test(
 def run_failure_simulation(
     *,
     base_url: str,
-    token: str,
+    sessions: list[dict[str, Any]],
     post_id: int,
     total_requests: int,
     workers: int,
@@ -351,6 +423,7 @@ def run_failure_simulation(
     statuses: list[int] = []
 
     def worker(i: int) -> dict[str, Any]:
+        session = sessions[i % len(sessions)]
         expected_valid = i % 2 == 0
         if expected_valid:
             payload = {"content": f"{content_prefix} valid-{i}"}
@@ -361,10 +434,11 @@ def run_failure_simulation(
             base_url=base_url,
             method="POST",
             path=f"/posts/{post_id}/comments",
-            token=token,
+            token=str(session["token"]),
             payload=payload,
         )
         resp["expected_valid"] = expected_valid
+        resp["username"] = str(session["username"])
         with lock:
             latencies.append(float(resp["elapsed_ms"]))
             statuses.append(int(resp["status"]))
@@ -379,6 +453,7 @@ def run_failure_simulation(
     invalid_failures = sum(
         1 for r in responses if (not r.get("expected_valid")) and r["status"] in (400, 404)
     )
+    unique_users_used = len({str(r.get("username")) for r in responses if r.get("username")})
 
     after = _fetch_post_consistency(post_id)
     expected_delta = valid_success
@@ -401,6 +476,7 @@ def run_failure_simulation(
         "after": after,
         "valid_success_responses": valid_success,
         "invalid_expected_failures": invalid_failures,
+        "unique_users_used": unique_users_used,
         "expected_comment_delta": expected_delta,
         "actual_comment_delta": actual_delta,
         "cleanup_performed": not keep_generated_comments,
@@ -413,7 +489,7 @@ def run_failure_simulation(
 def run_stress_reads(
     *,
     base_url: str,
-    token: str,
+    sessions: list[dict[str, Any]],
     total_requests: int,
     workers: int,
     offset_window: int,
@@ -422,26 +498,29 @@ def run_stress_reads(
     latencies: list[float] = []
     statuses: list[int] = []
 
-    def worker(_: int) -> dict[str, Any]:
+    def worker(i: int) -> dict[str, Any]:
+        session = sessions[i % len(sessions)]
         offset = random.randint(0, max(offset_window, 0))
         resp = _api_request(
             base_url=base_url,
             method="GET",
             path=f"/posts?limit=20&offset={offset}",
-            token=token,
+            token=str(session["token"]),
         )
+        resp["username"] = str(session["username"])
         with lock:
             latencies.append(float(resp["elapsed_ms"]))
             statuses.append(int(resp["status"]))
         return resp
 
     started = time.perf_counter()
-    _run_parallel(total_requests, workers, worker)
+    responses = _run_parallel(total_requests, workers, worker)
     elapsed = time.perf_counter() - started
 
     successes = sum(1 for code in statuses if code == 200)
     success_rate = (successes / total_requests) if total_requests > 0 else 0.0
     throughput = (total_requests / elapsed) if elapsed > 0 else 0.0
+    unique_users_used = len({str(r.get("username")) for r in responses if r.get("username")})
 
     return {
         "requests": total_requests,
@@ -453,6 +532,7 @@ def run_stress_reads(
         "status_histogram": {
             str(code): statuses.count(code) for code in sorted(set(statuses))
         },
+        "unique_users_used": unique_users_used,
         "latency": _latency_stats(latencies),
         "stress_passed": success_rate >= 0.95,
         "details": "Pass threshold uses >=95% successful responses under configured load",
@@ -462,7 +542,16 @@ def run_stress_reads(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Module B concurrency, race, and stress tests")
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
-    parser.add_argument("--username", default="rahul.sharma@iitgn.ac.in")
+    parser.add_argument(
+        "--username",
+        default="",
+        help="Legacy single-user mode. Prefer --usernames for true multi-user simulation.",
+    )
+    parser.add_argument(
+        "--usernames",
+        default=",".join(DEFAULT_USERNAMES),
+        help="Comma-separated user emails for concurrent multi-user simulation.",
+    )
     parser.add_argument("--password", default="password123")
     parser.add_argument("--target-member-id", type=int, default=19)
     parser.add_argument("--post-id", type=int, default=1)
@@ -493,22 +582,26 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    token = _login(args.base_url, args.username, args.password)
-    follower_id = _fetch_member_id_by_email(args.username)
+    usernames = _parse_usernames(args.usernames)
+    if args.username.strip():
+        usernames = [args.username.strip()]
+    if not usernames:
+        raise RuntimeError("Provide at least one username via --usernames or --username")
+
+    sessions = _build_user_sessions(args.base_url, usernames, args.password)
 
     before = _fetch_post_consistency(args.post_id)
 
     race_result = run_follow_race_test(
         base_url=args.base_url,
-        token=token,
-        follower_id=follower_id,
+        sessions=sessions,
         target_member_id=args.target_member_id,
         race_requests=args.race_requests,
         race_workers=args.race_workers,
     )
     failure_result = run_failure_simulation(
         base_url=args.base_url,
-        token=token,
+        sessions=sessions,
         post_id=args.post_id,
         total_requests=args.failure_requests,
         workers=args.failure_workers,
@@ -516,7 +609,7 @@ def main() -> None:
     )
     stress_result = run_stress_reads(
         base_url=args.base_url,
-        token=token,
+        sessions=sessions,
         total_requests=args.stress_requests,
         workers=args.stress_workers,
         offset_window=args.offset_window,
@@ -539,6 +632,8 @@ def main() -> None:
         "config": {
             "base_url": args.base_url,
             "username": args.username,
+            "usernames": usernames,
+            "session_count": len(sessions),
             "target_member_id": args.target_member_id,
             "post_id": args.post_id,
             "race_requests": args.race_requests,

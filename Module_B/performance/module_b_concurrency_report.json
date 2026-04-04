@@ -1,8 +1,16 @@
 {
-  "timestamp_utc": "2026-04-04T20:25:34.529689+00:00",
+  "timestamp_utc": "2026-04-04T20:51:42.390961+00:00",
   "config": {
     "base_url": "http://127.0.0.1:8001",
-    "username": "rahul.sharma@iitgn.ac.in",
+    "username": "",
+    "usernames": [
+      "rahul.sharma@iitgn.ac.in",
+      "priya.patel@iitgn.ac.in",
+      "ananya.singh@iitgn.ac.in",
+      "neha.desai@iitgn.ac.in",
+      "aditya.verma@iitgn.ac.in"
+    ],
+    "session_count": 5,
     "target_member_id": 19,
     "post_id": 1,
     "race_requests": 200,
@@ -31,41 +39,43 @@
   "race_follow_test": {
     "requests": 200,
     "workers": 40,
-    "elapsed_s": 1.038,
+    "elapsed_s": 0.81,
     "status_histogram": {
       "200": 200
     },
     "success_responses": 200,
     "latency": {
-      "avg_ms": 190.882,
-      "min_ms": 46.773,
-      "max_ms": 273.555,
-      "p50_ms": 196.115,
-      "p95_ms": 250.252
+      "avg_ms": 147.834,
+      "min_ms": 28.397,
+      "max_ms": 173.165,
+      "p50_ms": 160.406,
+      "p95_ms": 168.291
     },
-    "follow_relation_count": 1,
+    "follow_relation_count": 5,
+    "distinct_followers": 5,
+    "unique_users_used": 5,
     "race_passed": true,
-    "details": "Pass requires exactly one follow edge after all concurrent attempts",
+    "details": "Pass requires one follow edge per unique concurrent user and no duplicates",
     "sample_response": {
       "message": "Followed member successfully",
-      "follow_id": 32,
+      "follow_id": 232,
       "created": true
     }
   },
   "failure_simulation": {
     "requests": 120,
     "workers": 24,
-    "elapsed_s": 0.523,
+    "elapsed_s": 0.434,
     "status_histogram": {
       "200": 60,
       "400": 60
     },
     "latency": {
-      "avg_ms": 95.995,
-      "min_ms": 19.527,
-      "max_ms": 118.888,
-      "p50_ms": 98.739,
-      "p95_ms": 116.287
+      "avg_ms": 79.303,
+      "min_ms": 18.685,
+      "max_ms": 124.83,
+      "p50_ms": 80.183,
+      "p95_ms": 102.009
     },
     "before": {
       "post_id": 1,
@@ -87,6 +97,7 @@
     },
     "valid_success_responses": 60,
     "invalid_expected_failures": 60,
+    "unique_users_used": 5,
     "expected_comment_delta": 60,
     "actual_comment_delta": 60,
     "cleanup_performed": true,
@@ -97,19 +108,20 @@
   "stress_reads": {
     "requests": 1000,
     "workers": 80,
-    "elapsed_s": 3.38,
-    "throughput_req_per_s": 295.85,
+    "elapsed_s": 2.46,
+    "throughput_req_per_s": 406.486,
     "success_count": 1000,
     "success_rate": 1.0,
     "status_histogram": {
       "200": 1000
     },
+    "unique_users_used": 5,
     "latency": {
-      "avg_ms": 259.644,
-      "min_ms": 19.369,
-      "max_ms": 324.844,
-      "p50_ms": 270.53,
-      "p95_ms": 300.963
+      "avg_ms": 188.61,
+      "min_ms": 11.371,
+      "max_ms": 269.765,
+      "p50_ms": 186.885,
+      "p95_ms": 237.783
     },
     "stress_passed": true,
     "details": "Pass threshold uses >=95% successful responses under configured load"
