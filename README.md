@@ -3,29 +3,36 @@
 ## Folder Structure
 
 ```text
-College_Social_Media_DB/
+College_Social_Media_DB_A3/
 |-- .gitignore
 |-- README.md
 |-- Module_A/
 |   |-- requirements.txt
 |   |-- report.ipynb
+|   |-- run_acid_tests.py           Test runner
+|   |-- run_demo.py                 Interactive demo runner
+|   |-- video_demo.py               Video demo script
 |   `-- database/
 |       |-- __init__.py
-|       |-- bplustree.py
+|       |-- bplustree.py           # B+ Tree storage engine
 |       |-- bruteforce.py
-|       |-- table.py
-|       |-- db_manager.py
-|       |-- transaction_manager.py
-|       |-- sql_sanity.py
+|       |-- table.py               # Table abstraction
+|       |-- db_manager.py          # Multi-table manager
+|       |-- transaction_manager.py # ACID coordinator
+|       |-- sql_sanity.py          # SQLite validator
+|       |-- test_acid_multirelation.py   Main ACID tests
+|       |-- acid_demonstration.py   Interactive demo
 |       |-- performance.py
 |       |-- run_performance_tests.py
-|       |-- test_acid_validation.py
-|       |-- test_acid_multirelation.py
 |       |-- visualizations_generator.py
 |       |-- performance_results_jpgs/
 |       `-- visualizations/
 `-- Module_B/
     |-- requirements.txt
+    |-- report.ipynb
+    |-- report.tex
+    |-- modB_dash.png
+    |-- locust_dash.png
     |-- app/
     |   |-- main.py
     |   |-- database.py
@@ -40,6 +47,10 @@ College_Social_Media_DB/
     |-- sql/
     |   |-- schema.sql
     |   `-- sample_data.sql
+    `-- performance/
+        |-- run_module_b_concurrency_stress.py
+        |-- run_module_b_locust_profiles.py
+        `-- locustfile_module_b.py
 ```
 
 ## Setup
@@ -71,126 +82,119 @@ This runs performance testing for different random key set sizes and generates:
 - Performance charts in `Module_A/database/performance_results_jpgs/`
 - Benchmark JSON in `Module_A/database/visualizations/benchmark_results.json`
 
-## What Is Implemented
 
-- SubTask 1: B+ Tree node/tree classes, insert, delete, search, range query, split/merge
-- SubTask 2: PerformanceAnalyzer for timing and memory comparison
-- SubTask 3: Graphviz visualization for tree structure and leaf links
-- SubTask 4: Performance testing across different random key set sizes with Matplotlib plots
-- Additional Layer: In-memory table/database manager API built on top of B+ Tree index
-- Assignment 3 Module A Layer: Multi-relation ACID transactions, failure recovery, and SQL sanity-check validation
+## Module A: ACID Validation for B+ Tree Database (Assignment 3)
 
-## Module A ACID Validation (Assignment 3)
+### Overview
 
-### Design Summary
+Module A extends the B+ Tree database system from Assignment 2 to support **transaction management**, **failure recovery**, and **ACID guarantees** across **at least 3 relations**.
 
-- B+ Tree is the primary storage for each relation.
-- `DBManager` holds multiple relations, each backed by a separate B+ Tree.
-- `TransactionManager` provides `BEGIN`, `COMMIT`, and `ROLLBACK` across multiple relations.
-- Isolation is implemented as serialized execution (single active write transaction).
-- Durability and restart recovery use committed database snapshots.
-- SQL (`sqlite3`) is used as a reference/sanity-check store to compare final state with B+ Tree state.
+**Key Features:**
 
-### ACID Components
+-  Atomicity: Multi-relation transactions are all-or-nothing
+-  Consistency: Database maintains valid state with constraints
+-  Isolation: Transactions execute serially without interference
+-  Durability: Committed data persists across system crashes
 
-- Multi-relation transaction coordinator: `Module_A/database/transaction_manager.py`
-- Database-level snapshot import/export and persistence: `Module_A/database/db_manager.py`
-- Table-level state export/restore helpers: `Module_A/database/table.py`
-- SQL reference comparator: `Module_A/database/sql_sanity.py`
-- Single-table ACID tests: `Module_A/database/test_acid_validation.py`
-- Multi-relation ACID tests (users/products/orders): `Module_A/database/test_acid_multirelation.py`
+### Three-Relation Schema (College Social Media)
 
-### Run Module A ACID Tests
+1. **Members** - User accounts (MemberID, Name, Department, Reputation)
+2. **Posts** - User posts (PostID, MemberID, Content, LikeCount)
+3. **Comments** - Post comments (CommentID, PostID, MemberID, Content, LikeCount)
 
-From project root:
+**Storage:** Each relation stored in a separate B+ Tree where primary key = B+ Tree key and complete record = B+ Tree value.
+
+### ACID Implementation
+
+**Atomicity:** Deep copy of database state before transaction; restore on rollback
+
+**Consistency:** Schema validation + referential integrity checks
+
+**Isolation:** Threading.RLock ensures serialized execution (one active transaction at a time)
+
+**Durability:** JSON snapshot persisted to disk on COMMIT; loaded on restart
+
+### Quick Start
+
+#### Run ACID Tests
+
+From Module_A directory:
 
 ```bash
-python -m unittest Module_A.database.test_acid_validation Module_A.database.test_acid_multirelation -v
+cd Module_A
+python run_acid_tests.py
 ```
 
-## B+ Tree Implementation (SubTask 1)
+**Expected Output:**
 
-- Implemented in: Module_A/database/bplustree.py
-- Main classes: BPlusTreeNode, BPlusTree
-- Main operations: insert(), delete(), search(), range_query()
-- Node balancing: automatic split/merge handled internally during insert/delete
-
-## Performance Analysis (SubTask 2)
-
-- Implemented in: Module_A/database/performance.py
-- Main class: PerformanceAnalyzer
-- Benchmarks: insert, search, delete, range_query, mixed workload
-- Memory measurement: tracemalloc peak memory tracking
-- Comparison target: Module_A/database/bruteforce.py (BruteForceDB)
-
-## Graphviz Implementation (SubTask 3)
-
-- Implemented in: Module_A/database/bplustree.py
-- Main method: BPlusTree.visualize_tree()
-- Helper methods: \_add_nodes() and \_add_edges()
-- Current output folder for visualization files: Module_A/database/visualizations/
-- Existing generated files: Module_A/database/visualizations/bplustree_demo.png, Module_A/database/visualizations/bplustree_demo_large.png
-
-## Performance Testing Implementation (SubTask 4)
-
-- Implemented in: Module_A/database/visualizations_generator.py
-- Main function: run_full_performance_analysis()
-- Benchmarks used from: Module_A/database/performance.py (PerformanceAnalyzer)
-- Run file: Module_A/database/run_performance_tests.py
-- Output folders for generated artifacts:
-  - Module_A/database/performance_results_jpgs/
-  - Module_A/database/visualizations/
-- Generated files include:
-  - JPG charts: performance_insert.jpg, performance_search.jpg, performance_delete.jpg, performance_range_query.jpg, performance_random_workload.jpg, performance_memory_usage.jpg, performance_combined_comparison.jpg, performance_speedup_ratio.jpg
-  - Benchmark data: benchmark_results.json
-
-## Table and DB Manager Layer (Additional)
-
-- Implemented in:
-  - Module_A/database/table.py
-  - Module_A/database/db_manager.py
-- Purpose:
-  - Provide a simple DBMS-style API over the B+ Tree index.
-  - Manage multiple in-memory tables cleanly.
-
-### Features
-
-- Table API:
-  - insert(row), upsert(row), get(key), update(key, updates), delete(key)
-  - range_query(start_key, end_key), all_rows(), count(), truncate()
-  - select(predicate=None, columns=None, limit=None)
-  - aggregate(operation, column=None, predicate=None) for count/sum/min/max/avg
-- DBManager API:
-  - create_table(name, ...), get_table(name), drop_table(name)
-  - list_tables(), has_table(name)
-
-### Quick Usage
-
-```python
-from Module_A.database import DBManager
-
-db = DBManager()
-members = db.create_table(
-    name="members",
-    primary_key="id",
-    schema=["id", "name", "dept"],
-    bplustree_order=4,
-)
-
-members.insert({"id": 1, "name": "Alice", "dept": "CSE"})
-members.upsert({"id": 2, "name": "Bob", "dept": "ECE"})
-members.update(1, {"dept": "AIML"})
-
-print(members.get(1))
-print(members.range_query(1, 10))
-print(db.list_tables())
 ```
+test_atomicity_multi_relation_rollback_on_failure ... ok
+test_consistency_constraints_after_commit ... ok
+test_durability_and_recovery_across_restart ... ok
+test_isolation_serialized_execution ... ok
+
+Ran 4 tests in 0.213s
+OK 
+```
+
+#### Run Interactive Demo
+
+```bash
+cd Module_A
+python run_demo.py
+```
+
+#### Run Video Demo (with step-by-step pauses)
+
+```bash
+cd Module_A
+python video_demo.py
+```
+
+### Key Components
+
+**Core Implementation:**
+
+- `database/bplustree.py` - B+ Tree storage engine
+- `database/table.py` - Table abstraction with B+ Tree backing
+- `database/db_manager.py` - Multi-table database manager
+- `database/transaction_manager.py` - Transaction coordinator (BEGIN/COMMIT/ROLLBACK)
+- `database/sql_sanity.py` - SQLite-based validation reference
+
+**Testing:**
+
+- `database/test_acid_multirelation.py` -  Main test suite (all 4 ACID properties across 3 relations)
+- `database/acid_demonstration.py` - Interactive demonstration script
+- `run_acid_tests.py` - Test runner
+- `video_demo.py` - Video demonstration script
+
+### Test Coverage
+
+All 4 tests operate on **3 relations simultaneously**:
+
+| Test                                                  | What It Does                                                                             |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **test_atomicity_multi_relation_rollback_on_failure** | Updates Member + Post + Insert Comment → Simulate failure → Verify complete rollback     |
+| **test_consistency_constraints_after_commit**         | Verify referential integrity (Comments reference valid Members & Posts)                  |
+| **test_isolation_serialized_execution**               | Start TX1 → Attempt TX2 concurrently → Verify TX2 blocked                                |
+| **test_durability_and_recovery_across_restart**       | Commit TX → Start uncommitted TX → Simulate crash → Verify only committed data recovered |
+
+### Demonstration Example
+
+**Atomicity Test - Before/During/After Rollback:**
+
+| Table             | Before TX | During TX | After Rollback |
+| ----------------- | --------- | --------- | -------------- |
+| Member Reputation | 100       | 85      | 100          |
+| Post LikeCount    | 5         | 10      | 5            |
+| Comment 1001      | Not exist | Exists  | Not exist    |
+
+**Result:** All 3 tables rolled back together - transaction is atomic!
 
 ### Notes
 
 - Primary key type is integer (`int`) to match B+ Tree indexing.
 - Table-level and database-level JSON snapshot persistence is available for recovery testing.
-
 
 ## Module B (Assignment 3): Concurrency, Failure Simulation, and Stress Testing
 
@@ -260,10 +264,10 @@ Supplementary Locust dashboard (smoke, medium, high):
 Latest profile summary from `Module_B/performance/module_b_notebook_test_matrix_results.json`:
 
 | Profile | Overall | Race | Failure | Stress | Throughput (req/s) | Stress P95 (ms) |
-|---|---|---|---|---|---:|---:|
-| smoke | PASS | PASS | PASS | PASS | 239.499 | 370.633 |
-| medium | PASS | PASS | PASS | PASS | 221.402 | 583.748 |
-| high | PASS | PASS | PASS | PASS | 178.665 | 1062.457 |
+| ------- | ------- | ---- | ------- | ------ | -----------------: | --------------: |
+| smoke   | PASS    | PASS | PASS    | PASS   |            239.499 |         370.633 |
+| medium  | PASS    | PASS | PASS    | PASS   |            221.402 |         583.748 |
+| high    | PASS    | PASS | PASS    | PASS   |            178.665 |        1062.457 |
 
 ### Setup
 
