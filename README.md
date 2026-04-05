@@ -202,6 +202,8 @@ This module contains the FastAPI + MySQL application and Assignment 3 validation
 Module_B/
 |-- requirements.txt
 |-- report.ipynb
+|-- modB_dash.png
+|-- locust_dash.png
 |-- .gitignore
 |-- app/
 |   |-- main.py
@@ -214,11 +216,14 @@ Module_B/
 |   `-- sample_passwords.txt
 |-- performance/
 |   |-- run_module_b_concurrency_stress.py
-|   |-- index_benchmark_results.json
-|   `-- module_b_concurrency_report.json
+|   |-- run_module_b_locust_profiles.py
+|   |-- locustfile_module_b.py
+|   `-- index_benchmark_results.json
 `-- logs/
     `-- .gitkeep
 ```
+
+Generated run artifacts (CSV and JSON reports) are intentionally cleaned before commit.
 
 ### Notebook-First Testing (Single Source of Truth)
 
@@ -235,9 +240,19 @@ The notebook contains an end-to-end flow:
 5. pass/fail summary and assertions
 6. artifact export
 
+### Dashboard Snapshots
+
+Main matrix dashboard (Assignment 3 notebook runner):
+
+![Module B Matrix Dashboard](Module_B/modB_dash.png)
+
+Supplementary Locust dashboard (smoke, medium, high):
+
+![Module B Locust Dashboard](Module_B/locust_dash.png)
+
 ### Current Notebook State (Latest)
 
-- The notebook has 10 cells total.
+- The notebook has 17 cells total.
 - Code cells executed successfully in order.
 - Preflight passed (`ready_for_matrix = true`) in the latest run.
 - Matrix profiles completed: `smoke`, `medium`, `high`.
@@ -306,6 +321,32 @@ If needed, run the same logic directly from script:
 python Module_B/performance/run_module_b_concurrency_stress.py --base-url http://127.0.0.1:8001 --usernames "rahul.sharma@iitgn.ac.in,priya.patel@iitgn.ac.in,ananya.singh@iitgn.ac.in,neha.desai@iitgn.ac.in,aditya.verma@iitgn.ac.in" --password password123 --post-id 1 --race-requests 200 --failure-requests 120 --stress-requests 1000
 ```
 
+### Supplementary Extensive Locust Testing (Optional)
+
+To add a broader load-testing envelope in addition to notebook correctness checks:
+
+```powershell
+python Module_B/performance/run_module_b_locust_profiles.py --base-url http://127.0.0.1:8001 --usernames "rahul.sharma@iitgn.ac.in,priya.patel@iitgn.ac.in,ananya.singh@iitgn.ac.in,neha.desai@iitgn.ac.in,aditya.verma@iitgn.ac.in" --password password123 --post-id 1 --target-member-id 19 --profiles smoke,medium,high --max-error-rate 0.05 --max-p95-ms 1500
+```
+
+What this runs:
+
+- profile-based Locust workloads (`smoke`, `medium`, `high`)
+- read-heavy traffic plus controlled write round-trips (likes/comments/follows)
+- threshold-based pass/fail checks (`error_rate`, optional `p95` cap)
+
+Generated artifacts:
+
+- `Module_B/performance/locust_smoke_*.csv`
+- `Module_B/performance/locust_medium_*.csv`
+- `Module_B/performance/locust_high_*.csv`
+- `Module_B/performance/module_b_locust_report_smoke.json`
+- `Module_B/performance/module_b_locust_report_medium.json`
+- `Module_B/performance/module_b_locust_report_high.json`
+- `Module_B/performance/module_b_locust_profiles_report.json`
+
+These are generated at runtime and are removed during cleanup so repository commits stay source-focused.
+
 ### What Is Validated
 
 - Atomicity of critical multi-step write endpoints
@@ -324,6 +365,9 @@ To keep Module B clean and avoid generated-noise commits:
   - `app/__pycache__/`
   - `performance/__pycache__/`
   - `logs/*.log`
+  - `performance/locust_*.csv`
+  - `performance/module_b_locust_report*.json`
+  - `performance/module_b_locust_profiles_report.json`
   - `performance/module_b_concurrency_report*.json`
   - `performance/module_b_notebook_test_matrix_results.json`
 
