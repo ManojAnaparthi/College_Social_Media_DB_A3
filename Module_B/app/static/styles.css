@@ -179,6 +179,11 @@ button:hover {
   background: #fcfefe;
 }
 
+.post-item-focus {
+  border-color: #c6ddd8;
+  background: #f7fcfb;
+}
+
 .post-header-row {
   display: flex;
   align-items: flex-start;
@@ -223,10 +228,69 @@ button:hover {
 }
 
 .post-item .like-row {
-  margin-top: 0.35rem;
+  margin-top: 0;
   display: inline-flex !important;
   align-items: center;
   gap: 0.35rem;
+}
+
+.post-engagement-row {
+  margin-top: 0.4rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.comment-link-button {
+  display: inline-block;
+  text-decoration: none;
+  color: var(--text);
+  background: #f6fafb;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.65rem;
+  font-weight: 600;
+}
+
+.comment-link-button:hover {
+  background: #eef7f5;
+  border-color: #b9d9d3;
+}
+
+.comment-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin-top: 0.7rem;
+  background: #fcfefe;
+}
+
+.comment-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.comment-header-text {
+  margin: 0;
+  flex: 1;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.comment-actions button {
+  width: auto;
+  margin-top: 0;
+}
+
+.comment-body {
+  margin: 0.45rem 0;
+  white-space: pre-wrap;
 }
 
 .post-item button.like-toggle-icon {

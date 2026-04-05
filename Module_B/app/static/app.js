@@ -4,6 +4,7 @@ const USER_KEY = "csm_current_user";
 let sessionToken = localStorage.getItem(TOKEN_KEY) || "";
 let currentUser = null;
 let viewedMemberId = null;
+let currentPostId = null;
 
 try {
   currentUser = JSON.parse(localStorage.getItem(USER_KEY) || "null");
@@ -407,12 +408,15 @@ function renderPostsInto(containerId, posts, allowOwnerMenu = true) {
         ${ownerActions}
       </div>
       <p>${post.Content}</p>
+      <div class="post-engagement-row">
+        <a class="comment-link-button" href="/static/current_post.html?post_id=${post.PostID}">Comments (${post.CommentCount ?? 0})</a>
         <div class="like-row">
-        <button type="button" class="like-toggle-icon ${viewerHasLiked ? "liked" : ""}" data-action="toggle-like" data-id="${post.PostID}" data-liked="${viewerHasLiked ? "true" : "false"}" title="Toggle like" aria-label="Toggle like">
-            <span class="like-icon" aria-hidden="true">&#9829;</span>
-          </button>
-          <span class="like-count">${post.LikeCount ?? 0}</span>
+          <button type="button" class="like-toggle-icon ${viewerHasLiked ? "liked" : ""}" data-action="toggle-like" data-id="${post.PostID}" data-liked="${viewerHasLiked ? "true" : "false"}" title="Toggle like" aria-label="Toggle like">
+              <span class="like-icon" aria-hidden="true">&#9829;</span>
+            </button>
+            <span class="like-count">${post.LikeCount ?? 0}</span>
         </div>
+      </div>
       <p><small>${post.PostDate}</small></p>
     `;
 
@@ -426,6 +430,130 @@ function renderPosts(posts) {
 
 function renderMemberPosts(posts) {
   renderPostsInto("member-post-list", posts, false);
+}
+
+function renderCurrentPost(post) {
+  const panel = document.getElementById("current-post-view");
+  if (!panel) {
+    return;
+  }
+
+  const isOwner = Number(currentUser?.member_id) === Number(post.MemberID);
+  const isAdmin = isAdminUser();
+  const canEdit = isOwner;
+  const canDelete = isOwner || isAdmin;
+  const viewerHasLiked = Boolean(post.ViewerHasLiked);
+
+  const ownerActions = canDelete
+    ? `
+      <details class="post-menu">
+        <summary title="Post actions">...</summary>
+        <div class="post-menu-items">
+          ${canEdit ? `<button data-action="edit-post" data-id="${post.PostID}" data-edit-allowed="true">Edit</button>` : ""}
+          <button data-action="delete-post" data-id="${post.PostID}" data-delete-allowed="true">Delete</button>
+        </div>
+      </details>
+    `
+    : "";
+
+  panel.innerHTML = `
+    <article class="post-item post-item-focus">
+      <div class="post-header-row">
+        <p class="post-header-text"><strong>#${post.PostID}</strong> by <a href="/static/member-profile.html?member_id=${post.MemberID}">${post.AuthorName}</a> (${post.Visibility})</p>
+        ${ownerActions}
+      </div>
+      <p>${post.Content}</p>
+      <div class="like-row">
+        <button type="button" class="like-toggle-icon ${viewerHasLiked ? "liked" : ""}" data-action="toggle-like" data-id="${post.PostID}" data-liked="${viewerHasLiked ? "true" : "false"}" title="Toggle like" aria-label="Toggle like">
+          <span class="like-icon" aria-hidden="true">&#9829;</span>
+        </button>
+        <span class="like-count">${post.LikeCount ?? 0}</span>
+      </div>
+      <p><small>${post.PostDate}</small></p>
+    </article>
+  `;
+}
+
+function renderComments(comments) {
+  const list = document.getElementById("comment-list");
+  if (!list) {
+    return;
+  }
+
+  list.innerHTML = "";
+  if (!comments || comments.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "status";
+    empty.textContent = "No comments yet. Start the conversation.";
+    list.appendChild(empty);
+    return;
+  }
+
+  comments.forEach((comment) => {
+    const isOwner = Number(currentUser?.member_id) === Number(comment.MemberID);
+    const canModify = isOwner || isAdminUser();
+
+    const div = document.createElement("div");
+    div.className = "comment-item";
+    div.innerHTML = `
+      <div class="comment-header-row">
+        <p class="comment-header-text"><strong>#${comment.CommentID}</strong> by <a href="/static/member-profile.html?member_id=${comment.MemberID}">${comment.AuthorName}</a></p>
+        ${canModify
+          ? `
+            <div class="comment-actions">
+              <button type="button" data-action="edit-comment" data-id="${comment.CommentID}">Edit</button>
+              <button type="button" data-action="delete-comment" data-id="${comment.CommentID}">Delete</button>
+            </div>
+          `
+          : ""
+        }
+      </div>
+      <p class="comment-body">${comment.Content}</p>
+      <p><small>${comment.CommentDate}</small></p>
+    `;
+
+    list.appendChild(div);
+  });
+}
+
+async function fetchCurrentPost() {
+  if (!currentPostId) {
+    return;
+  }
+
+  const res = await fetch(`/posts/${currentPostId}`, {
+    method: "GET",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+
+  if (!res.ok) {
+    setStatus("current-post-status", payload.detail || "Failed to load post", true);
+    return;
+  }
+
+  renderCurrentPost(payload.data);
+  setStatus("current-post-status", payload.message || "Post loaded");
+}
+
+async function fetchCurrentPostComments() {
+  if (!currentPostId) {
+    return;
+  }
+
+  const res = await fetch(`/posts/${currentPostId}/comments`, {
+    method: "GET",
+    headers: apiHeaders(),
+  });
+  const payload = await parseApiResponse(res);
+
+  if (!res.ok) {
+    setStatus("comment-list-status", payload.detail || "Failed to load comments", true);
+    return;
+  }
+
+  renderComments(payload.data || []);
+  setStatus("comment-list-status", `${payload.count ?? 0} comment(s) loaded`);
 }
 
 function renderMemberSearchResults(rows) {
@@ -1019,6 +1147,249 @@ function initCreatePostPage() {
   });
 }
 
+function initCurrentPostPage() {
+  setupHamburgerAndLogout();
+
+  const params = new URLSearchParams(window.location.search);
+  const postIdParam = params.get("post_id");
+  const parsedPostId = Number(postIdParam);
+  if (!Number.isInteger(parsedPostId) || parsedPostId < 1) {
+    setStatus("current-post-status", "Missing or invalid post_id in URL", true);
+    return;
+  }
+  currentPostId = parsedPostId;
+
+  requireAuth().then(async (user) => {
+    if (!user) {
+      return;
+    }
+    await fetchCurrentPost();
+    await fetchCurrentPostComments();
+  });
+
+  const refreshPostBtn = document.getElementById("refresh-current-post");
+  if (refreshPostBtn) {
+    refreshPostBtn.addEventListener("click", async () => {
+      if (!currentUser) {
+        setStatus("current-post-status", "Please login first", true);
+        return;
+      }
+      await fetchCurrentPost();
+    });
+  }
+
+  const refreshCommentsBtn = document.getElementById("refresh-comments");
+  if (refreshCommentsBtn) {
+    refreshCommentsBtn.addEventListener("click", async () => {
+      if (!currentUser) {
+        setStatus("comment-list-status", "Please login first", true);
+        return;
+      }
+      await fetchCurrentPostComments();
+    });
+  }
+
+  const commentForm = document.getElementById("comment-create-form");
+  if (commentForm) {
+    commentForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!currentUser) {
+        setStatus("comment-create-status", "Please login first", true);
+        return;
+      }
+
+      const contentInput = document.getElementById("comment_content");
+      if (!(contentInput instanceof HTMLTextAreaElement)) {
+        return;
+      }
+
+      const content = contentInput.value.trim();
+      if (!content) {
+        setStatus("comment-create-status", "Comment content cannot be empty", true);
+        return;
+      }
+
+      setStatus("comment-create-status", "Posting comment...");
+      const res = await fetch(`/posts/${currentPostId}/comments`, {
+        method: "POST",
+        headers: apiHeaders(),
+        body: JSON.stringify({ content }),
+      });
+      const payload = await parseApiResponse(res);
+
+      if (!res.ok) {
+        setStatus("comment-create-status", payload.detail || "Failed to create comment", true);
+        return;
+      }
+
+      contentInput.value = "";
+      setStatus("comment-create-status", payload.message || "Comment created");
+      await Promise.all([fetchCurrentPost(), fetchCurrentPostComments()]);
+    });
+  }
+
+  const postPanel = document.getElementById("current-post-view");
+  if (postPanel) {
+    postPanel.addEventListener("click", async (e) => {
+      const clicked = e.target;
+      if (!(clicked instanceof Element)) {
+        return;
+      }
+
+      const target = clicked.closest("button[data-action]");
+      if (!(target instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      const action = target.dataset.action;
+      const postId = target.dataset.id;
+      if (!action || !postId) {
+        return;
+      }
+
+      if (action === "toggle-like") {
+        await handleLikeToggle(target, "current-post-status");
+        await fetchCurrentPost();
+        return;
+      }
+
+      const editAllowed = target.dataset.editAllowed === "true";
+      const deleteAllowed = target.dataset.deleteAllowed === "true";
+
+      if (action === "edit-post") {
+        if (!editAllowed) {
+          return;
+        }
+
+        const newContent = prompt("Enter updated post content:");
+        if (newContent === null) {
+          return;
+        }
+
+        const trimmed = newContent.trim();
+        if (!trimmed) {
+          setStatus("current-post-status", "Post content cannot be empty", true);
+          return;
+        }
+
+        const res = await fetch(`/posts/${postId}`, {
+          method: "PUT",
+          headers: apiHeaders(),
+          body: JSON.stringify({ content: trimmed }),
+        });
+        const payload = await parseApiResponse(res);
+
+        if (!res.ok) {
+          setStatus("current-post-status", payload.detail || "Failed to update post", true);
+          return;
+        }
+
+        setStatus("current-post-status", payload.message || "Post updated");
+        await fetchCurrentPost();
+        return;
+      }
+
+      if (action === "delete-post") {
+        if (!deleteAllowed) {
+          return;
+        }
+
+        const confirmed = confirm("Are you sure you want to delete this post?");
+        if (!confirmed) {
+          return;
+        }
+
+        const res = await fetch(`/posts/${postId}`, {
+          method: "DELETE",
+          headers: apiHeaders(),
+        });
+        const payload = await parseApiResponse(res);
+
+        if (!res.ok) {
+          setStatus("current-post-status", payload.detail || "Failed to delete post", true);
+          return;
+        }
+
+        setStatus("current-post-status", payload.message || "Post deleted. Redirecting...");
+        setTimeout(() => redirectTo("/static/posts.html"), 700);
+      }
+    });
+  }
+
+  const commentList = document.getElementById("comment-list");
+  if (commentList) {
+    commentList.addEventListener("click", async (e) => {
+      const clicked = e.target;
+      if (!(clicked instanceof Element)) {
+        return;
+      }
+
+      const target = clicked.closest("button[data-action]");
+      if (!(target instanceof HTMLButtonElement)) {
+        return;
+      }
+
+      const action = target.dataset.action;
+      const commentId = target.dataset.id;
+      if (!action || !commentId) {
+        return;
+      }
+
+      if (action === "edit-comment") {
+        const card = target.closest(".comment-item");
+        const existingContent = card?.querySelector(".comment-body")?.textContent || "";
+        const newContent = prompt("Edit comment:", existingContent);
+        if (newContent === null) {
+          return;
+        }
+
+        const trimmed = newContent.trim();
+        if (!trimmed) {
+          setStatus("comment-create-status", "Comment content cannot be empty", true);
+          return;
+        }
+
+        const res = await fetch(`/comments/${commentId}`, {
+          method: "PUT",
+          headers: apiHeaders(),
+          body: JSON.stringify({ content: trimmed }),
+        });
+        const payload = await parseApiResponse(res);
+
+        if (!res.ok) {
+          setStatus("comment-create-status", payload.detail || "Failed to update comment", true);
+          return;
+        }
+
+        setStatus("comment-create-status", payload.message || "Comment updated");
+        await fetchCurrentPostComments();
+        return;
+      }
+
+      if (action === "delete-comment") {
+        const confirmed = confirm("Are you sure you want to delete this comment?");
+        if (!confirmed) {
+          return;
+        }
+
+        const res = await fetch(`/comments/${commentId}`, {
+          method: "DELETE",
+          headers: apiHeaders(),
+        });
+        const payload = await parseApiResponse(res);
+
+        if (!res.ok) {
+          setStatus("comment-create-status", payload.detail || "Failed to delete comment", true);
+          return;
+        }
+
+        setStatus("comment-create-status", payload.message || "Comment deleted");
+        await Promise.all([fetchCurrentPost(), fetchCurrentPostComments()]);
+      }
+    });
+  }
+}
+
 const page = document.body.dataset.page;
 
 if (page === "login") {
@@ -1039,6 +1410,10 @@ if (page === "posts") {
 
 if (page === "create-post") {
   initCreatePostPage();
+}
+
+if (page === "current-post") {
+  initCurrentPostPage();
 }
 
 if (page === "search-members") {

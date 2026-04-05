@@ -1,0 +1,1 @@
+{"timestamp_utc": "2026-04-05T06:21:23.869875+00:00", "action": "post_like", "actor_member_id": 1, "actor_role": "Student", "endpoint": "/posts/21/like/toggle", "method": "POST", "table": "Like,Post", "target_id": 21, "outcome": "success", "details": "Member 1 liked post 21"}
