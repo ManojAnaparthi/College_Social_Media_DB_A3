@@ -194,176 +194,137 @@ print(db.list_tables())
 
 ## Module B (Assignment 3): Concurrency, Failure Simulation, and Stress Testing
 
-This repository now includes a dedicated Module B runner for Assignment 3 validation:
+This module contains the FastAPI + MySQL application and Assignment 3 validation workflow for concurrency, race handling, failure simulation, and stress testing.
 
-- Script: `Module_B/performance/run_module_b_concurrency_stress.py`
-- Output artifact: `Module_B/performance/module_b_concurrency_report.json`
+### What Is In Module B
 
-What it executes in one run:
+```text
+Module_B/
+|-- requirements.txt
+|-- report.ipynb
+|-- .gitignore
+|-- app/
+|   |-- main.py
+|   |-- database.py
+|   |-- test_db.py
+|   `-- static/
+|-- sql/
+|   |-- schema.sql
+|   |-- sample_data.sql
+|   `-- sample_passwords.txt
+|-- performance/
+|   |-- run_module_b_concurrency_stress.py
+|   |-- index_benchmark_results.json
+|   `-- module_b_concurrency_report.json
+`-- logs/
+    `-- .gitkeep
+```
 
-- Concurrent usage simulation:
-  - High-volume parallel `GET /posts` requests from multiple authenticated users
-  - Captures success rate, throughput, and latency (`avg`, `p50`, `p95`)
-- Race-condition test (critical operation):
-  - Many users concurrently execute `POST /members/{member_id}/follow` on the same target member
-  - Verifies exactly one follow edge per unique user and no duplicate rows
-- Failure simulation:
-  - Mixed valid and intentionally invalid concurrent `POST /posts/{post_id}/comments` from multiple users
-  - Verifies failed operations do not cause partial count inconsistencies
-- Consistency checks:
-  - Validates `Post.LikeCount` vs `Like` rows
-  - Validates `Post.CommentCount` vs active `Comment` rows
+### Notebook-First Testing (Single Source of Truth)
 
-### Reproduce results (step-by-step commands)
+All Assignment 3 testing for Module B is run from:
 
-Run the following from Windows PowerShell (from your cloned project root).
+- `Module_B/report.ipynb`
 
-1. Install Module B dependencies.
+The notebook contains an end-to-end flow:
+
+1. environment/path setup
+2. test configuration
+3. preflight checks (runner + API + auth + feed)
+4. expanded workload matrix execution
+5. pass/fail summary and assertions
+6. artifact export
+
+### Current Notebook State (Latest)
+
+- The notebook has 10 cells total.
+- Code cells executed successfully in order.
+- Preflight passed (`ready_for_matrix = true`) in the latest run.
+- Matrix profiles completed: `smoke`, `medium`, `high`.
+
+Latest profile summary from `Module_B/performance/module_b_notebook_test_matrix_results.json`:
+
+| Profile | Overall | Race | Failure | Stress | Throughput (req/s) | Stress P95 (ms) |
+|---|---|---|---|---|---:|---:|
+| smoke | PASS | PASS | PASS | PASS | 239.499 | 370.633 |
+| medium | PASS | PASS | PASS | PASS | 221.402 | 583.748 |
+| high | PASS | PASS | PASS | PASS | 178.665 | 1062.457 |
+
+### Setup
+
+Run from project root (`DB_A3`).
+
+#### 1) Install dependencies
 
 ```powershell
 python -m pip install -r Module_B/requirements.txt
 ```
 
-2. Add DB password and JWT key as environment variables.
+#### 2) Set environment variables
 
 ```powershell
 $env:DB_HOST = "localhost"
 $env:DB_USER = "root"
 $env:DB_PASSWORD = "<your-mysql-password>"
+$env:DB_NAME = "college_social_media"
 $env:JWT_SECRET_KEY = [Convert]::ToBase64String((1..48 | ForEach-Object { Get-Random -Minimum 0 -Maximum 256 }))
 ```
 
-3. Ensure MySQL service is running.
-
-```powershell
-$mysqlService = Get-Service | Where-Object { $_.Name -match "mysql" -or $_.DisplayName -match "mysql" } | Select-Object -First 1
-if (-not $mysqlService) { throw "No MySQL service found. Start MySQL manually and retry." }
-if ($mysqlService.Status -ne "Running") { Start-Service -Name $mysqlService.Name }
-Get-Service -Name $mysqlService.Name
-```
-
-If `Start-Service` fails due to permissions, run PowerShell as Administrator.
-
-4. Run SQL schema and sample data dumps.
+#### 3) Load SQL schema and sample data
 
 ```powershell
 mysql -u "$env:DB_USER" -p"$env:DB_PASSWORD" -e "SOURCE Module_B/sql/schema.sql; SOURCE Module_B/sql/sample_data.sql;"
 ```
 
-If `mysql` is not in PATH, use your local MySQL installation path for `mysql.exe`.
+### Running Module B
 
-5. Run the app (Terminal A).
+#### Terminal A: Start API
 
 ```powershell
 Set-Location Module_B/app
 python -m uvicorn main:app --host 127.0.0.1 --port 8001
 ```
 
-6. Run the Module B stress/failure test script (Terminal B in project root).
+#### Terminal B: Run notebook
+
+Open `Module_B/report.ipynb` and run cells top-to-bottom.
+
+### Expanded Testing Range
+
+The notebook uses a profile matrix in its configuration cell:
+
+- smoke: race 200, failure 120, stress 1000
+- medium: race 500, failure 300, stress 3000
+- high: race 1000, failure 600, stress 5000
+- optional extreme profile via `RUN_EXTREME = True`
+
+### CLI Alternative (Optional)
+
+If needed, run the same logic directly from script:
 
 ```powershell
-$env:DB_HOST = "localhost"
-$env:DB_USER = "root"
-$env:DB_PASSWORD = "<your-mysql-password>"
 python Module_B/performance/run_module_b_concurrency_stress.py --base-url http://127.0.0.1:8001 --usernames "rahul.sharma@iitgn.ac.in,priya.patel@iitgn.ac.in,ananya.singh@iitgn.ac.in,neha.desai@iitgn.ac.in,aditya.verma@iitgn.ac.in" --password password123 --post-id 1 --race-requests 200 --failure-requests 120 --stress-requests 1000
 ```
 
-Expected output summary:
+### What Is Validated
 
-- `overall_pass: true`
-- `race_passed: true`
-- `failure_simulation_passed: true`
-- `stress_passed: true`
+- Atomicity of critical multi-step write endpoints
+- Race safety for concurrent follow operations
+- Failure behavior under mixed valid/invalid writes
+- Counter consistency (`Post.LikeCount`, `Post.CommentCount`)
+- Stress behavior (success rate, throughput, latency percentiles)
 
-Generated artifact:
+### Cleanup Policy Applied
 
-- `Module_B/performance/module_b_concurrency_report.json`
+To keep Module B clean and avoid generated-noise commits:
 
-### Latest executed run (5 April 2026)
+- Python cache folders are removed from `app/` and `performance/`
+- `logs/audit.log` is treated as generated runtime output
+- Module-specific ignores are in `Module_B/.gitignore`:
+  - `app/__pycache__/`
+  - `performance/__pycache__/`
+  - `logs/*.log`
+  - `performance/module_b_concurrency_report*.json`
+  - `performance/module_b_notebook_test_matrix_results.json`
 
-Source artifact:
-
-- `Module_B/performance/module_b_concurrency_report.json`
-
-Executed configuration:
-
-- Base URL: `http://127.0.0.1:8001`
-- Users: `5` authenticated sample users
-- Race test: `200` requests, `40` workers
-- Failure simulation: `120` requests, `24` workers
-- Stress test: `1000` requests, `80` workers
-
-Observed outcomes:
-
-- `overall_pass = true`
-- `race_follow_test.race_passed = true`
-- `failure_simulation.failure_simulation_passed = true`
-- `stress_reads.stress_passed = true`
-
-Measured metrics:
-
-- Race-condition test (`POST /members/{member_id}/follow`):
-  - Success responses: `200/200`
-  - Unique users used: `5`
-  - Final relation count: `5` (one follow edge per participating user, no duplicates)
-  - Latency: avg `147.834 ms`, p95 `168.291 ms`
-- Failure simulation (`POST /posts/{post_id}/comments`, mixed valid+invalid):
-  - Unique users used: `5`
-  - HTTP status histogram: `200=60`, `400=60`
-  - Expected comment delta: `60`, actual comment delta: `60`
-  - Cleanup rows soft-deleted: `60`
-  - Latency: avg `79.303 ms`, p95 `102.009 ms`
-  - Post counter consistency remained valid before and after test
-- Stress test (parallel `GET /posts`):
-  - Unique users used: `5`
-  - Success rate: `1.0` (`1000/1000`)
-  - Throughput: `406.486 req/s`
-  - Latency: avg `188.61 ms`, p95 `237.783 ms`
-
-### Transaction and race-safety hardening in API layer
-
-For Module B Assignment 3 correctness under concurrent writes, critical multi-step write paths in `Module_B/app/main.py` now execute in single DB transactions using `execute_transaction` from `Module_B/app/database.py`:
-
-- `POST /signup` (Member + AuthCredential)
-- `POST /admin/members` (Member + AuthCredential)
-- `POST /members/{member_id}/follow` (idempotent under races)
-- `POST /posts/{post_id}/like/toggle` (like row + counter update)
-- `POST /posts/{post_id}/comments` (comment row + counter update)
-- `DELETE /comments/{comment_id}` (soft-delete + counter update)
-
-### Module B changes made for Assignment 3 spec compliance
-
-The following changes were implemented to satisfy concurrent workload, failure handling, and correctness requirements.
-
-1. Atomic multi-step write execution
-
-- Added `execute_transaction(...)` in `Module_B/app/database.py` for explicit begin/commit/rollback behavior.
-- Added DB error-code propagation (`DatabaseQueryError.error_code`) to handle duplicate-key races cleanly.
-
-2. Race-condition control for shared operations
-
-- Updated follow creation flow in `POST /members/{member_id}/follow` to be idempotent under concurrent attempts from many users.
-- Updated post like toggle flow in `POST /posts/{post_id}/like/toggle` to perform row-level lock/read-modify-write in one transaction.
-
-3. Failure handling without partial writes
-
-- Updated comment creation and deletion flows to maintain `Post.CommentCount` atomically with `Comment` row writes.
-- Updated signup/admin member creation to ensure `Member` and `AuthCredential` are always inserted together or rolled back together.
-
-4. Stress and correctness validation tooling
-
-- Added `Module_B/performance/run_module_b_concurrency_stress.py` to execute:
-  - concurrent multi-user usage test
-  - multi-user race-condition test
-  - multi-user failure simulation test
-  - high-load stress test
-- Added consistency assertions in the runner for:
-  - `Post.LikeCount` vs `Like` rows
-  - `Post.CommentCount` vs active `Comment` rows
-
-5. ACID-oriented validation evidence (Module B scope)
-
-- Atomicity: multi-step writes are wrapped in transactions.
-- Consistency: pre/post consistency checks pass in generated report.
-- Isolation (practical): race test confirms one follow edge per unique user under concurrent attempts.
-- Durability: committed changes are persisted in MySQL and captured in report artifacts.
+If you want to preserve a run permanently, copy or rename the artifact before commit.

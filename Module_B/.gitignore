@@ -1,0 +1,5 @@
+app/__pycache__/
+performance/__pycache__/
+logs/*.log
+performance/module_b_concurrency_report*.json
+performance/module_b_notebook_test_matrix_results.json
